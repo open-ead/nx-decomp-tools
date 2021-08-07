@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+*.dist-info/
+.mypy_cache/
+.benchmarks/
+
+# IDEs
+.idea/
+.vscode/
+.DS_Store
+
+# IDA
+*.id0
+*.id1
+*.id2
+*.idb
+*.i64
+*.nam
+*.til
+
+# Ghidra
+*.gpr
+*.rep/
+*.lock
+
+# Debugging
+perf.data
+perf.data.old
+.gdb_history
