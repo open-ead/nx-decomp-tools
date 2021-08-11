@@ -224,7 +224,9 @@ fn check_single(
             .iter()
             .filter(|s| s.as_str() != &fn_to_check && s.as_str() != "--always-diff");
 
-        std::process::Command::new(repo::get_tools_path()?.join("asm-differ").join("diff.py"))
+        let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
+
+        std::process::Command::new(&differ_path)
             .current_dir(repo::get_tools_path()?)
             .arg("-I")
             .arg("-e")
@@ -232,7 +234,8 @@ fn check_single(
             .arg(format!("0x{:016x}", function.addr))
             .arg(format!("0x{:016x}", function.addr + function.size as u64))
             .args(diff_args)
-            .status()?;
+            .status()
+            .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
     }
 
     let new_status = match maybe_mismatch {
