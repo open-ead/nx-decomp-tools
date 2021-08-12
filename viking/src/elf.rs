@@ -32,8 +32,14 @@ pub struct Function<'a> {
 }
 
 lazy_static! {
-    static ref BUILD_TARGET: String = repo::CONFIG["build_target"].as_str().expect("Failed to read \"build_target\" from config TOML").to_string();
-    static ref DECOMP_ELF_PATH: PathBuf = repo::get_repo_root().expect("Failed to get repo root").join("build").join(BUILD_TARGET.as_str());
+    static ref BUILD_TARGET: String = repo::CONFIG["build_target"]
+        .as_str()
+        .expect("Failed to read \"build_target\" from config TOML")
+        .to_string();
+    static ref DECOMP_ELF_PATH: PathBuf = repo::get_repo_root()
+        .expect("Failed to get repo root")
+        .join("build")
+        .join(BUILD_TARGET.as_str());
 }
 
 impl<'a> Function<'a> {
