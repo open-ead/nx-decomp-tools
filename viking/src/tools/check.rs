@@ -265,8 +265,8 @@ fn check_single(
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let orig_elf = elf::load_orig_elf().with_context(|| "failed to load original ELF")?;
-    let decomp_elf = elf::load_decomp_elf().with_context(|| "failed to load decomp ELF")?;
+    let orig_elf = elf::load_orig_elf().context("failed to load original ELF")?;
+    let decomp_elf = elf::load_decomp_elf().context("failed to load decomp ELF")?;
 
     // Load these in parallel.
     let mut decomp_symtab = None;
@@ -281,15 +281,13 @@ fn main() -> Result<()> {
 
     let decomp_symtab = decomp_symtab
         .unwrap()
-        .with_context(|| "failed to make symbol map")?;
+        .context("failed to make symbol map")?;
 
     let decomp_glob_data_table = decomp_glob_data_table
         .unwrap()
-        .with_context(|| "failed to make global data table")?;
+        .context("failed to make global data table")?;
 
-    let functions = functions
-        .unwrap()
-        .with_context(|| "failed to load function CSV")?;
+    let functions = functions.unwrap().context("failed to load function CSV")?;
 
     let checker = FunctionChecker::new(
         &orig_elf,
@@ -298,7 +296,7 @@ fn main() -> Result<()> {
         decomp_glob_data_table,
         &functions,
     )
-    .with_context(|| "failed to construct FunctionChecker")?;
+    .context("failed to construct FunctionChecker")?;
 
     if args.len() >= 1 {
         // Single function mode.

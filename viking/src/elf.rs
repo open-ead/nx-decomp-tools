@@ -109,7 +109,7 @@ pub fn load_elf(path: &Path) -> Result<OwnedElf> {
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
     OwningHandle::try_new(Box::new((file, mmap)), |pair| unsafe {
-        let elf = parse_elf_faster(&(*pair).1).with_context(|| "failed to load ELF")?;
+        let elf = parse_elf_faster(&(*pair).1).context("failed to load ELF")?;
         Ok(Box::new(elf))
     })
 }
