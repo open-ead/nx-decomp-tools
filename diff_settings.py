@@ -13,15 +13,16 @@ def get_tools_bin_dir():
 
 
 def apply(config, args):
+    root = util.config.get_repo_root()
     config['arch'] = 'aarch64'
-    config['baseimg'] = util.config.get_repo_root() / 'data/main.elf'
+    config['baseimg'] = root / 'data/main.elf'
     config['myimg'] = util.config.get_decomp_elf()
-    config['source_directories'] = ['src', 'lib']
+    config['source_directories'] = [str(root / 'src'), str(root / 'lib')]
     config['objdump_executable'] = get_tools_bin_dir() + 'aarch64-none-elf-objdump'
 
-    for dir in ('build', 'build/nx64-release'):
-        if (Path(dir) / 'build.ninja').is_file():
-            config['make_command'] = ['ninja', '-C', dir]
+    for dir in (root / 'build', root / 'build/nx64-release'):
+        if (dir / 'build.ninja').is_file():
+            config['make_command'] = ['ninja', '-C', str(dir)]
 
 
 def map_build_target(make_target: str):
