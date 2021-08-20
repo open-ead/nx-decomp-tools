@@ -57,16 +57,6 @@ def _apply_xdelta3_patch(input: Path, patch: Path, dest: Path):
     except FileNotFoundError:
         fail("error: install xdelta3 and try again")
 
-def create_build_dir():
-    build_dir = ROOT / "build"
-    if build_dir.is_dir():
-        print(">>> build directory already exists: nothing to do")
-        return
-
-    subprocess.check_call(
-        "cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE=toolchain/ToolchainNX64.cmake -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -B build/".split(" "))
-    print(">>> created build directory")
-
 def set_up_compiler(version):
     compiler_dir = ROOT / "toolchain" / ("clang-"+version)
     if compiler_dir.is_dir():
