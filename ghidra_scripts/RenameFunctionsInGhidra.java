@@ -1,5 +1,9 @@
-// Script to load CSV data into Ghidra
-//@author AlexApps99
+// Script to import Switch decompilation CSV data into Ghidra.
+// Automatically demangles and adds tags for decompilation status.
+// WARNING: This MUST be run for the first time BEFORE analysis is applied.
+// You can run the script multiple times to update names and decompilation status,
+// though it may not always work as expected. If you notice any problems, please submit a bug!
+//@author OpenEAD
 //@category NX-Switch
 
 import ghidra.app.script.GhidraScript;
@@ -10,15 +14,16 @@ import java.io.File;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
-import ghidra.app.cmd.label.DemanglerCmd;
 import ghidra.program.model.address.AddressSet;
 import ghidra.util.NumericUtilities;
 import ghidra.app.cmd.label.DemanglerCmd;
 import ghidra.program.model.listing.FunctionTag;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.program.model.listing.FunctionTagManager;
+import java.util.stream.Stream;
 
 public class RenameFunctionsInGhidra extends GhidraScript {
+    private String[] bad_prefixes = { "sub_", "nullsub_", "j_" };
     private FunctionManager func_mgr;
     private FunctionTagManager func_tag_mgr;
     private String ok;
@@ -45,13 +50,13 @@ public class RenameFunctionsInGhidra extends GhidraScript {
         undecompiled = getOrMake("UNDECOMPILED").getName();
         lib = getOrMake("LIBRARY").getName();
 
-
         File input_csv = askFile("functions.csv", "Go");
         try (BufferedReader br = new BufferedReader(new FileReader(input_csv))) {
             // Skip header
             String line = br.readLine();
             while ((line = br.readLine()) != null) {
-                String[] pieces = line.split(",", -4); // Don't skip empty last column
+                // Don't skip empty last column
+                String[] pieces = line.split(",", -4);
                 if (pieces.length != 4) throw new Exception("Invalid CSV row: " + line);
 
                 Address addr = toAddr(pieces[0]);
@@ -66,31 +71,28 @@ public class RenameFunctionsInGhidra extends GhidraScript {
     }
 
 
-    // TODO the j_ prefix probably breaks demangling
     private Function applyFunction(Address addr, String status, String name, long func_size) throws Exception {
-        if (name.isEmpty()) name = null;
+        if (name.isEmpty() || Stream.of(bad_prefixes).anyMatch(name::startsWith))
+            name = null;
 
         Function func = func_mgr.getFunctionAt(addr);
         AddressSet body = new AddressSet(addr, addr.addNoWrap(func_size - 1));
 
-
         if (func != null) {
-            // Demangling can break this, hence the try-catch
-            try {
-                if (func.getName() != name) func.setName(name, SourceType.IMPORTED);
-            } catch (DuplicateNameException e) {}
+            if (name != null) {
+                try {
+                    func.getSymbol().setNameAndNamespace(name, currentProgram.getGlobalNamespace(), SourceType.IMPORTED);
+                } catch (DuplicateNameException e) {}
+            }
             if (!func.getBody().hasSameAddresses(body)) {
-                func.setBody(body);
+                println("A function was detected with the range " + func.getBody().toString() + " but should have the range " + body.toString() + ".");
             }
         } else {
             func = func_mgr.createFunction(name, addr, body, SourceType.IMPORTED);
         }
 
         if (name != null) {
-            DemanglerCmd cmd = new DemanglerCmd(addr, name);
-            if (!cmd.applyTo(currentProgram, monitor)) {
-                // Something that isn't mangled
-            }
+            new DemanglerCmd(addr, name).applyTo(currentProgram, monitor);
         }
 
         func.removeTag(ok);
