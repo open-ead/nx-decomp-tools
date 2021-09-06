@@ -6,22 +6,16 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import Section
 
-import diff_settings
-from util import utils
+from . import utils, config
 
-_config: Dict[str, Any] = {}
-diff_settings.apply(_config, {})
-
-_root = utils.get_repo_root()
-
-base_elf_data = io.BytesIO((_root / _config["baseimg"]).read_bytes())
-my_elf_data = io.BytesIO((_root / _config["myimg"]).read_bytes())
+base_elf_data = io.BytesIO(config.get_base_elf().read_bytes())
+my_elf_data = io.BytesIO(config.get_decomp_elf().read_bytes())
 
 base_elf = ELFFile(base_elf_data)
 my_elf = ELFFile(my_elf_data)
 my_symtab = my_elf.get_section_by_name(".symtab")
 if not my_symtab:
-    utils.fail(f'{_config["myimg"]} has no symbol table')
+    utils.fail(f'{config.get_decomp_elf()} has no symbol table')
 
 
 class Symbol(NamedTuple):

@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 import typing as tp
 
-import util.elf
+from . import elf
 
 
 class DataSymbol(tp.NamedTuple):
@@ -19,7 +19,7 @@ class DataSymbolContainer:
         self.symbols: tp.List[DataSymbol] = []
 
     def load_from_csv(self, path: Path):
-        symtab = util.elf.build_name_to_symbol_table(util.elf.my_symtab)
+        symtab = elf.build_name_to_symbol_table(elf.my_symtab)
 
         with path.open("r") as f:
             for i, line in enumerate(csv.reader(f)):

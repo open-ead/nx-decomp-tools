@@ -15,7 +15,7 @@ def get_tools_bin_dir():
 def apply(config, args):
     root = util.config.get_repo_root()
     config['arch'] = 'aarch64'
-    config['baseimg'] = root / 'data/main.elf'
+    config['baseimg'] = util.config.get_base_elf()
     config['myimg'] = util.config.get_decomp_elf()
     config['source_directories'] = [str(root / 'src'), str(root / 'lib')]
     config['objdump_executable'] = get_tools_bin_dir() + 'aarch64-none-elf-objdump'

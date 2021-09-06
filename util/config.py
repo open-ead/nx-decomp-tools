@@ -4,6 +4,9 @@ import toml
 def get_functions_csv_path() -> Path:
     return get_repo_root() / load_toml()["functions_csv"]
 
+def get_base_elf() -> Path:
+    return get_repo_root() / 'data/main.elf'
+
 def get_decomp_elf() -> Path:
     return get_repo_root() / "build" / get_build_target()
 

@@ -4,7 +4,7 @@ from typing import Set, DefaultDict, Dict, Optional, Tuple
 
 import capstone as cs
 
-from util import dsym, elf, utils
+from . import dsym, elf, utils
 
 _store_instructions = ("str", "strb", "strh", "stur", "sturb", "sturh")
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import typing as tp
 
-from util import config
+from . import config
 
 try:
     import cxxfilt
