@@ -19,7 +19,8 @@ def apply(config, args):
     config['myimg'] = util.config.get_decomp_elf()
     config['source_directories'] = [str(root / 'src'), str(root / 'lib')]
     config['objdump_executable'] = get_tools_bin_dir() + 'aarch64-none-elf-objdump'
-
+    # ill-suited to C++ projects (and too slow for large executables)
+    config['show_line_numbers_default'] = False
     for dir in (root / 'build', root / 'build/nx64-release'):
         if (dir / 'build.ninja').is_file():
             config['make_command'] = ['ninja', '-C', str(dir)]
