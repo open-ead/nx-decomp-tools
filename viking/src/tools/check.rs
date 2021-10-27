@@ -174,6 +174,25 @@ fn get_function_to_check_from_args(args: &[String]) -> Result<String> {
     Ok(maybe_fn_to_check.remove(0))
 }
 
+fn get_version_from_args(args: &[String]) -> Result<Option<String>> {
+    let mut maybe_version: Vec<String> = args
+        .iter()
+        .filter(|s| s.as_str().starts_with("--version="))
+        .map(|s| s.clone().replace("--version=",""))
+        .collect();
+
+    ensure!(
+        maybe_version.len() <= 1,
+        "expected only one version number ('--version=XXX')"
+    );
+
+    if maybe_version.len() == 0 {
+        return Ok(None);
+    }
+
+    Ok(Some(maybe_version.remove(0)))
+}
+
 fn check_single(
     functions: &[functions::Info],
     checker: &FunctionChecker,
@@ -222,7 +241,7 @@ fn check_single(
     if should_show_diff {
         let diff_args = args
             .iter()
-            .filter(|s| s.as_str() != &fn_to_check && s.as_str() != "--always-diff");
+            .filter(|s| s.as_str() != &fn_to_check && s.as_str() != "--always-diff" && !s.as_str().starts_with("--version="));
 
         let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
 
@@ -265,8 +284,11 @@ fn check_single(
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let orig_elf = elf::load_orig_elf().context("failed to load original ELF")?;
-    let decomp_elf = elf::load_decomp_elf().context("failed to load decomp ELF")?;
+    let version = get_version_from_args(&args)?;
+    
+    let orig_elf = elf::load_orig_elf(&version).context("failed to load original ELF")?;
+    let decomp_elf = elf::load_decomp_elf(&version).context("failed to load decomp ELF")?;
+    functions::init_functions_csv_path(&version);
 
     // Load these in parallel.
     let mut decomp_symtab = None;
@@ -298,7 +320,12 @@ fn main() -> Result<()> {
     )
     .context("failed to construct FunctionChecker")?;
 
-    if args.len() >= 1 {
+    let mut single_diff = args.len() >= 1;
+    if version.is_some() {
+        single_diff = args.len() >= 2;
+    }
+
+    if single_diff {
         // Single function mode.
         check_single(
             &functions,

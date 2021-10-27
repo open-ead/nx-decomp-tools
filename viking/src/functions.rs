@@ -6,6 +6,7 @@ use rustc_hash::FxHashMap;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,14 +48,6 @@ impl Info {
 
 pub const CSV_HEADER: &[&str] = &["Address", "Quality", "Size", "Name"];
 pub const ADDRESS_BASE: u64 = 0x71_0000_0000;
-
-lazy_static! {
-    static ref FUNCTIONS_CSV_PATH: PathBuf = {
-        let mut path = repo::get_repo_root().expect("Failed to get repo root");
-        path.push(repo::CONFIG["functions_csv"].as_str().expect("Failed to read \"functions_csv\" from config TOML"));
-        path
-    };
-}
 
 fn parse_base_16(value: &str) -> Result<u64> {
     if let Some(stripped) = value.strip_prefix("0x") {
@@ -173,13 +166,25 @@ pub fn write_functions_to_path(csv_path: &Path, functions: &[Info]) -> Result<()
     Ok(())
 }
 
+lazy_static! {
+    static ref FUNCTIONS_CSV_PATH: Mutex<PathBuf> = Mutex::new(PathBuf::new());
+}
+
+pub fn init_functions_csv_path(version: &Option<String>) {
+    let mut path = repo::get_repo_root().expect("Failed to get repo root");
+    let config_functions_csv = repo::CONFIG["functions_csv"].as_str().expect("Failed to read \"functions_csv\" from config TOML");
+    let functions_csv = version.as_ref().map(|s| config_functions_csv.replace("{version}", s)).unwrap_or(config_functions_csv.to_string());
+    path.push(functions_csv);
+    *FUNCTIONS_CSV_PATH.lock().unwrap() = path;
+}
+
 /// Returns a Vec of all known functions in the executable.
 pub fn get_functions() -> Result<Vec<Info>> {
-    get_functions_for_path(FUNCTIONS_CSV_PATH.as_path())
+    get_functions_for_path(FUNCTIONS_CSV_PATH.lock().unwrap().as_path())
 }
 
 pub fn write_functions(functions: &[Info]) -> Result<()> {
-    write_functions_to_path(FUNCTIONS_CSV_PATH.as_path(), functions)
+    write_functions_to_path(FUNCTIONS_CSV_PATH.lock().unwrap().as_path(), functions)
 }
 
 pub fn make_known_function_map(functions: &[Info]) -> FxHashMap<u64, &Info> {
