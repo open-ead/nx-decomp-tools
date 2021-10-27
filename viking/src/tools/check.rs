@@ -24,14 +24,14 @@ static GLOBAL: MiMalloc = MiMalloc;
 /// Returns false if the program should exit with a failure code at the end.
 fn check_function(
     checker: &FunctionChecker,
-    mut cs: &mut capstone::Capstone,
+    cs: &mut capstone::Capstone,
     orig_elf: &elf::OwnedElf,
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
     function: &functions::Info,
 ) -> Result<bool> {
     let name = function.name.as_str();
-    let decomp_fn = elf::get_function_by_name(&decomp_elf, &decomp_symtab, &name);
+    let decomp_fn = elf::get_function_by_name(decomp_elf, decomp_symtab, name);
 
     match function.status {
         Status::NotDecompiled if decomp_fn.is_err() => return Ok(true),
@@ -52,7 +52,7 @@ fn check_function(
     let decomp_fn = decomp_fn.unwrap();
 
     let get_orig_fn = || {
-        elf::get_function(&orig_elf, function.addr, function.size as u64).with_context(|| {
+        elf::get_function(orig_elf, function.addr, function.size as u64).with_context(|| {
             format!(
                 "failed to get function {} ({}) from the original executable",
                 name,
@@ -66,7 +66,7 @@ fn check_function(
             let orig_fn = get_orig_fn()?;
 
             let result = checker
-                .check(&mut cs, &orig_fn, &decomp_fn)
+                .check(cs, &orig_fn, &decomp_fn)
                 .with_context(|| format!("checking {}", name))?;
 
             if let Some(mismatch) = result {
@@ -91,7 +91,7 @@ fn check_function(
             let orig_fn = get_orig_fn()?;
 
             let result = checker
-                .check(&mut cs, &orig_fn, &decomp_fn)
+                .check(cs, &orig_fn, &decomp_fn)
                 .with_context(|| format!("checking {}", name))?;
 
             if result.is_none() {
@@ -137,11 +137,11 @@ fn check_all(
         CAPSTONE.with(|cs| -> Result<()> {
             let mut cs = cs.borrow_mut();
             let ok = check_function(
-                &checker,
+                checker,
                 &mut cs,
-                &orig_elf,
-                &decomp_elf,
-                &decomp_symtab,
+                orig_elf,
+                decomp_elf,
+                decomp_symtab,
                 function,
             )?;
             if !ok {
@@ -162,8 +162,8 @@ fn check_all(
 fn get_function_to_check_from_args(args: &[String]) -> Result<String> {
     let mut maybe_fn_to_check: Vec<String> = args
         .iter()
-        .filter(|s| !s.starts_with("-"))
-        .map(|s| s.clone())
+        .filter(|s| !s.starts_with('-'))
+        .cloned()
         .collect();
 
     ensure!(
@@ -174,16 +174,28 @@ fn get_function_to_check_from_args(args: &[String]) -> Result<String> {
     Ok(maybe_fn_to_check.remove(0))
 }
 
+fn get_version_from_args(args: &[String]) -> Result<Option<&str>> {
+    let mut iter = args.iter().filter_map(|s| s.strip_prefix("--version="));
+    match (iter.next(), iter.next()) {
+        (Some(_), Some(_)) => bail!("expected only one version number ('--version=XXX')"),
+        (None, None) => Ok(None),
+        (Some(s), None) => Ok(Some(s)),
+
+        (None, Some(_)) => unreachable!()
+    }
+}
+
 fn check_single(
     functions: &[functions::Info],
     checker: &FunctionChecker,
     orig_elf: &elf::OwnedElf,
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
-    args: &Vec<String>,
+    args: &[String],
+    version: &Option<&str>
 ) -> Result<()> {
-    let fn_to_check = get_function_to_check_from_args(&args)?;
-    let function = functions::find_function_fuzzy(&functions, &fn_to_check)
+    let fn_to_check = get_function_to_check_from_args(args)?;
+    let function = functions::find_function_fuzzy(functions, &fn_to_check)
         .with_context(|| format!("unknown function: {}", ui::format_symbol_name(&fn_to_check)))?;
     let name = function.name.as_str();
 
@@ -194,14 +206,14 @@ fn check_single(
     }
 
     let decomp_fn =
-        elf::get_function_by_name(&decomp_elf, &decomp_symtab, &name).with_context(|| {
+        elf::get_function_by_name(decomp_elf, decomp_symtab, name).with_context(|| {
             format!(
                 "failed to get decomp function: {}",
                 ui::format_symbol_name(name)
             )
         })?;
 
-    let orig_fn = elf::get_function(&orig_elf, function.addr, function.size as u64)?;
+    let orig_fn = elf::get_function(orig_elf, function.addr, function.size as u64)?;
 
     let maybe_mismatch = checker
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
@@ -209,8 +221,7 @@ fn check_single(
 
     let mut should_show_diff = args
         .iter()
-        .find(|s| s.as_str() == "--always-diff")
-        .is_some();
+        .any(|s| s.as_str() == "--always-diff");
 
     if let Some(mismatch) = &maybe_mismatch {
         eprintln!("{}\n{}", "mismatch".red().bold(), &mismatch);
@@ -222,7 +233,7 @@ fn check_single(
     if should_show_diff {
         let diff_args = args
             .iter()
-            .filter(|s| s.as_str() != &fn_to_check && s.as_str() != "--always-diff");
+            .filter(|s| s.as_str() != fn_to_check && s.as_str() != "--always-diff" && !s.as_str().starts_with("--version="));
 
         let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
 
@@ -256,7 +267,7 @@ fn check_single(
             .find(|info| info.addr == function.addr)
             .unwrap()
             .status = new_status;
-        functions::write_functions(&new_functions)?;
+        functions::write_functions(&new_functions, version)?;
     }
 
     Ok(())
@@ -265,8 +276,10 @@ fn check_single(
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let orig_elf = elf::load_orig_elf().context("failed to load original ELF")?;
-    let decomp_elf = elf::load_decomp_elf().context("failed to load decomp ELF")?;
+    let version = get_version_from_args(&args)?;
+    
+    let orig_elf = elf::load_orig_elf(&version).context("failed to load original ELF")?;
+    let decomp_elf = elf::load_decomp_elf(&version).context("failed to load decomp ELF")?;
 
     // Load these in parallel.
     let mut decomp_symtab = None;
@@ -276,7 +289,7 @@ fn main() -> Result<()> {
     rayon::scope(|s| {
         s.spawn(|_| decomp_symtab = Some(elf::make_symbol_map_by_name(&decomp_elf)));
         s.spawn(|_| decomp_glob_data_table = Some(elf::build_glob_data_table(&decomp_elf)));
-        s.spawn(|_| functions = Some(functions::get_functions()));
+        s.spawn(|_| functions = Some(functions::get_functions(&version)));
     });
 
     let decomp_symtab = decomp_symtab
@@ -298,7 +311,12 @@ fn main() -> Result<()> {
     )
     .context("failed to construct FunctionChecker")?;
 
-    if args.len() >= 1 {
+    let mut single_diff = !args.is_empty();
+    if version.is_some() {
+        single_diff = args.len() >= 2;
+    }
+
+    if single_diff {
         // Single function mode.
         check_single(
             &functions,
@@ -307,6 +325,7 @@ fn main() -> Result<()> {
             &decomp_elf,
             &decomp_symtab,
             &args,
+            &version
         )?;
     } else {
         // Normal check mode.

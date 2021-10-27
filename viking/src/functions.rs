@@ -1,6 +1,5 @@
 use crate::repo;
 use anyhow::{bail, ensure, Context, Result};
-use lazy_static::lazy_static;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use std::{
@@ -47,14 +46,6 @@ impl Info {
 
 pub const CSV_HEADER: &[&str] = &["Address", "Quality", "Size", "Name"];
 pub const ADDRESS_BASE: u64 = 0x71_0000_0000;
-
-lazy_static! {
-    static ref FUNCTIONS_CSV_PATH: PathBuf = {
-        let mut path = repo::get_repo_root().expect("Failed to get repo root");
-        path.push(repo::CONFIG["functions_csv"].as_str().expect("Failed to read \"functions_csv\" from config TOML"));
-        path
-    };
-}
 
 fn parse_base_16(value: &str) -> Result<u64> {
     if let Some(stripped) = value.strip_prefix("0x") {
@@ -173,13 +164,22 @@ pub fn write_functions_to_path(csv_path: &Path, functions: &[Info]) -> Result<()
     Ok(())
 }
 
-/// Returns a Vec of all known functions in the executable.
-pub fn get_functions() -> Result<Vec<Info>> {
-    get_functions_for_path(FUNCTIONS_CSV_PATH.as_path())
+pub fn get_functions_csv_path(version: &Option<&str>) -> PathBuf {
+    let mut path = repo::get_repo_root().expect("Failed to get repo root");
+    let config_functions_csv = repo::CONFIG["functions_csv"].as_str().expect("Failed to read \"functions_csv\" from config TOML");
+    let functions_csv = version.map(|s| config_functions_csv.replace("{version}", s)).unwrap_or_else(|| config_functions_csv.to_string());
+    path.push(functions_csv);
+
+    path
 }
 
-pub fn write_functions(functions: &[Info]) -> Result<()> {
-    write_functions_to_path(FUNCTIONS_CSV_PATH.as_path(), functions)
+/// Returns a Vec of all known functions in the executable.
+pub fn get_functions(version: &Option<&str>) -> Result<Vec<Info>> {
+    get_functions_for_path(get_functions_csv_path(version).as_path())
+}
+
+pub fn write_functions(functions: &[Info], version: &Option<&str>) -> Result<()> {
+    write_functions_to_path(get_functions_csv_path(version).as_path(), functions)
 }
 
 pub fn make_known_function_map(functions: &[Info]) -> FxHashMap<u64, &Info> {
