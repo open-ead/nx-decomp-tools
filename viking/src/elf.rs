@@ -10,7 +10,6 @@ use goblin::{
     elf64::program_header::PT_LOAD,
     strtab::Strtab,
 };
-use lazy_static::lazy_static;
 use memmap::{Mmap, MmapOptions};
 use owning_ref::OwningHandle;
 use rustc_hash::FxHashMap;
@@ -29,17 +28,6 @@ pub struct Function<'a> {
     pub addr: u64,
     /// The bytes that make up the code for this function.
     pub code: &'a [u8],
-}
-
-lazy_static! {
-    static ref BUILD_TARGET: String = repo::CONFIG["build_target"]
-        .as_str()
-        .expect("Failed to read \"build_target\" from config TOML")
-        .to_string();
-    static ref DECOMP_ELF_PATH: PathBuf = repo::get_repo_root()
-        .expect("Failed to get repo root")
-        .join("build")
-        .join(BUILD_TARGET.as_str());
 }
 
 impl<'a> Function<'a> {
@@ -114,15 +102,35 @@ pub fn load_elf(path: &Path) -> Result<OwnedElf> {
     })
 }
 
-pub fn load_orig_elf() -> Result<OwnedElf> {
+pub fn load_orig_elf(version: &Option<String>) -> Result<OwnedElf> {
     let mut path = repo::get_repo_root()?;
-    path.push("data");
+    let data_name = if version.is_some() {
+        format!("data/{}", version.as_ref().unwrap())
+    } else {
+        "data".to_string()
+    };
+    path.push(data_name);
     path.push("main.elf");
     load_elf(path.as_path())
 }
 
-pub fn load_decomp_elf() -> Result<OwnedElf> {
-    load_elf(&DECOMP_ELF_PATH)
+pub fn load_decomp_elf(version: &Option<String>) -> Result<OwnedElf> {
+    let build_dir_name = if version.is_some() {
+        format!("build/{}", version.as_ref().unwrap())
+    } else {
+        "build".to_string()
+    };
+
+    let build_target: String = repo::CONFIG["build_target"]
+        .as_str()
+        .expect("Failed to read \"build_target\" from config TOML")
+        .to_string();
+    let decomp_elf_path: PathBuf = repo::get_repo_root()
+        .expect("Failed to get repo root")
+        .join(build_dir_name)
+        .join(build_target.as_str());
+
+    load_elf(&decomp_elf_path)
 }
 
 struct SymbolStringTable<'elf> {
