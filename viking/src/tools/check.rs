@@ -174,11 +174,13 @@ fn get_function_to_check_from_args(args: &[String]) -> Result<String> {
     Ok(maybe_fn_to_check.remove(0))
 }
 
-fn get_version_from_args(args: &[String]) -> Result<Option<&str>> {
+fn get_version_from_args_or_config(args: &[String]) -> Result<Option<&str>> {
     let mut iter = args.iter().filter_map(|s| s.strip_prefix("--version="));
     match (iter.next(), iter.next()) {
         (Some(_), Some(_)) => bail!("expected only one version number ('--version=XXX')"),
-        (None, None) => Ok(None),
+        (None, None) => Ok(
+            repo::CONFIG.get("default_version").map(|s| s.as_str()).unwrap_or(None)
+        ),
         (Some(s), None) => Ok(Some(s)),
 
         (None, Some(_)) => unreachable!()
@@ -276,7 +278,7 @@ fn check_single(
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let version = get_version_from_args(&args)?;
+    let version = get_version_from_args_or_config(&args)?;
     
     let orig_elf = elf::load_orig_elf(&version).context("failed to load original ELF")?;
     let decomp_elf = elf::load_decomp_elf(&version).context("failed to load decomp ELF")?;
