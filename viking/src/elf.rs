@@ -10,7 +10,6 @@ use goblin::{
     elf64::program_header::PT_LOAD,
     strtab::Strtab,
 };
-use lazy_static::lazy_static;
 use memmap::{Mmap, MmapOptions};
 use owning_ref::OwningHandle;
 use rustc_hash::FxHashMap;
@@ -29,17 +28,6 @@ pub struct Function<'a> {
     pub addr: u64,
     /// The bytes that make up the code for this function.
     pub code: &'a [u8],
-}
-
-lazy_static! {
-    static ref BUILD_TARGET: String = repo::CONFIG["build_target"]
-        .as_str()
-        .expect("Failed to read \"build_target\" from config TOML")
-        .to_string();
-    static ref DECOMP_ELF_PATH: PathBuf = repo::get_repo_root()
-        .expect("Failed to get repo root")
-        .join("build")
-        .join(BUILD_TARGET.as_str());
 }
 
 impl<'a> Function<'a> {
@@ -114,15 +102,35 @@ pub fn load_elf(path: &Path) -> Result<OwnedElf> {
     })
 }
 
-pub fn load_orig_elf() -> Result<OwnedElf> {
+pub fn load_orig_elf(version: &Option<&str>) -> Result<OwnedElf> {
     let mut path = repo::get_repo_root()?;
-    path.push("data");
+    let data_name = if version.is_some() {
+        format!("data/{}", version.as_ref().unwrap())
+    } else {
+        "data".to_string()
+    };
+    path.push(data_name);
     path.push("main.elf");
     load_elf(path.as_path())
 }
 
-pub fn load_decomp_elf() -> Result<OwnedElf> {
-    load_elf(&DECOMP_ELF_PATH)
+pub fn load_decomp_elf(version: &Option<&str>) -> Result<OwnedElf> {
+    let build_dir_name = if version.is_some() {
+        format!("build/{}", version.unwrap())
+    } else {
+        "build".to_string()
+    };
+
+    let build_target: String = repo::CONFIG["build_target"]
+        .as_str()
+        .expect("Failed to read \"build_target\" from config TOML")
+        .to_string();
+    let decomp_elf_path: PathBuf = repo::get_repo_root()
+        .expect("Failed to get repo root")
+        .join(build_dir_name)
+        .join(build_target.as_str());
+
+    load_elf(&decomp_elf_path)
 }
 
 struct SymbolStringTable<'elf> {
@@ -174,7 +182,7 @@ pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName> {
         Default::default(),
     );
 
-    let strtab = SymbolStringTable::from_elf(&elf)?;
+    let strtab = SymbolStringTable::from_elf(elf)?;
 
     for symbol in elf.syms.iter().filter(filter_out_useless_syms) {
         map.entry(strtab.get_string(symbol.st_name))
@@ -200,7 +208,7 @@ pub fn make_addr_to_name_map(elf: &OwnedElf) -> Result<AddrToNameMap> {
         Default::default(),
     );
 
-    let strtab = SymbolStringTable::from_elf(&elf)?;
+    let strtab = SymbolStringTable::from_elf(elf)?;
 
     for symbol in elf.syms.iter().filter(filter_out_useless_syms) {
         map.entry(symbol.st_value)
@@ -250,7 +258,7 @@ pub fn build_glob_data_table(elf: &OwnedElf) -> Result<GlobDataTable> {
     let section = &elf.dynrelas;
     let section_hdr = find_section(elf, ".rela.dyn")?;
     // The corresponding symbol table.
-    let symtab = parse_symtab(elf, get_linked_section(elf, &section_hdr)?)?;
+    let symtab = parse_symtab(elf, get_linked_section(elf, section_hdr)?)?;
 
     let mut table = GlobDataTable::with_capacity_and_hasher(section.len(), Default::default());
 
@@ -296,7 +304,7 @@ pub fn get_offset_in_file(elf: &OwnedElf, addr: u64) -> Result<usize> {
 }
 
 pub fn get_elf_bytes(elf: &OwnedElf, addr: u64, size: u64) -> Result<&[u8]> {
-    let offset = get_offset_in_file(&elf, addr)?;
+    let offset = get_offset_in_file(elf, addr)?;
     let size = size as usize;
     Ok(&elf.as_owner().1[offset..(offset + size)])
 }
@@ -304,7 +312,7 @@ pub fn get_elf_bytes(elf: &OwnedElf, addr: u64, size: u64) -> Result<&[u8]> {
 pub fn get_function(elf: &OwnedElf, addr: u64, size: u64) -> Result<Function> {
     Ok(Function {
         addr,
-        code: get_elf_bytes(&elf, addr, size)?,
+        code: get_elf_bytes(elf, addr, size)?,
     })
 }
 
@@ -316,5 +324,5 @@ pub fn get_function_by_name<'a>(
     let symbol = symbols
         .get(&name)
         .ok_or_else(|| anyhow!("unknown function: {}", name))?;
-    get_function(&elf, symbol.st_value, symbol.st_size)
+    get_function(elf, symbol.st_value, symbol.st_size)
 }

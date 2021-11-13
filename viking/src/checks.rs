@@ -195,7 +195,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         functions: &'functions [functions::Info],
     ) -> Result<Self> {
         let mut known_data_symbols = KnownDataSymbolMap::new();
-        known_data_symbols.load(get_data_symbol_csv_path()?.as_path(), &decomp_symtab)?;
+        known_data_symbols.load(get_data_symbol_csv_path()?.as_path(), decomp_symtab)?;
 
         let known_functions = functions::make_known_function_map(functions);
         let orig_got_section = elf::find_section(orig_elf, ".got")?;
@@ -255,7 +255,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         // Check every pair of instructions.
         while let (Some(i1), Some(i2)) = (instructions.0.next(), instructions.1.next()) {
             let ids = map_two(&i1, &i2, |i| i.id().0);
-            let detail = try_map_two(&i1, &i2, |insn| cs.insn_detail(&insn))?;
+            let detail = try_map_two(&i1, &i2, |insn| cs.insn_detail(insn))?;
             let arch_detail = map_pair(&detail, |d| d.arch_detail());
             let ops = map_pair(&arch_detail, |a| a.arm64().unwrap().operands_ref());
 
@@ -477,13 +477,13 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         orig_addr_ptr: u64,
         decomp_addr_ptr: u64,
     ) -> Option<MismatchCause> {
-        if !elf::is_in_section(&self.orig_got_section, orig_addr_ptr, 8) {
+        if !elf::is_in_section(self.orig_got_section, orig_addr_ptr, 8) {
             return None;
         }
 
-        let orig_offset = elf::get_offset_in_file(&self.orig_elf, orig_addr_ptr).ok()? as u64;
+        let orig_offset = elf::get_offset_in_file(self.orig_elf, orig_addr_ptr).ok()? as u64;
         let orig_addr = u64::from_le_bytes(
-            elf::get_elf_bytes(&self.orig_elf, orig_offset, 8)
+            elf::get_elf_bytes(self.orig_elf, orig_offset, 8)
                 .ok()?
                 .try_into()
                 .ok()?,
@@ -491,7 +491,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
 
         let data_symbol = self.known_data_symbols.get_symbol(orig_addr)?;
         let decomp_addr = *self.decomp_glob_data_table.get(&decomp_addr_ptr)?;
-        self.check_data_symbol_ex(orig_addr, decomp_addr, &data_symbol)
+        self.check_data_symbol_ex(orig_addr, decomp_addr, data_symbol)
     }
 
     fn make_mismatch(
@@ -510,7 +510,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
     #[inline(never)]
     fn translate_decomp_addr_to_name(&self, decomp_addr: u64) -> Option<&'decomp_elf str> {
         let map = self.decomp_addr_to_name_map.get_or_create(|| {
-            let map = elf::make_addr_to_name_map(&self.decomp_elf).ok();
+            let map = elf::make_addr_to_name_map(self.decomp_elf).ok();
             map.unwrap_or_default()
         });
         map.get(&decomp_addr).copied()
