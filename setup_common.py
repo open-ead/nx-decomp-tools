@@ -7,9 +7,23 @@ import tarfile
 import tempfile
 import urllib.request
 
+from util import config
+
 ROOT = Path(__file__).parent.parent.parent
-TARGET_PATH = ROOT / "data" / "main.nso"
-TARGET_ELF_PATH = ROOT / "data" / "main.elf"
+
+def get_target_path(version = config.get_default_version()):
+    value = ROOT / "data"
+    if version is not None:
+        value /= version
+    
+    return value / "main.nso"
+
+def get_target_elf_path(version = config.get_default_version()):
+    value = ROOT / "data"
+    if version is not None:
+        value /= version
+    
+    return value / "main.elf"
 
 
 def fail(error: str):
