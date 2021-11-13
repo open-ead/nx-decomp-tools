@@ -233,11 +233,18 @@ fn check_single(
     }
 
     if should_show_diff {
-        let diff_args = args
+        let mut diff_args: Vec<String> = args
             .iter()
-            .filter(|s| s.as_str() != fn_to_check && s.as_str() != "--always-diff" && !s.as_str().starts_with("--version="));
+            .filter(|s| s.as_str() != fn_to_check && s.as_str() != "--always-diff" && !s.as_str().starts_with("--version="))
+            .cloned()
+            .collect();
 
         let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
+
+        if version.is_some() {
+            diff_args.push("--version".to_owned());
+            diff_args.push(version.unwrap().to_owned());
+        }
 
         std::process::Command::new(&differ_path)
             .current_dir(repo::get_tools_path()?)
