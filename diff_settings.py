@@ -12,16 +12,29 @@ def get_tools_bin_dir():
     return ""
 
 
+def add_custom_arguments(parser):
+    parser.add_argument('--version', dest='version', help='Specify which version should be recompiled on source changes')
+
+
 def apply(config, args):
     root = util.config.get_repo_root()
+    version = args.version
+    if version is None:
+        version = util.config.get_default_version()
+
     config['arch'] = 'aarch64'
-    config['baseimg'] = util.config.get_base_elf()
-    config['myimg'] = util.config.get_decomp_elf()
+    config['baseimg'] = util.config.get_base_elf(version)
+    config['myimg'] = util.config.get_decomp_elf(version)
     config['source_directories'] = [str(root / 'src'), str(root / 'lib')]
     config['objdump_executable'] = get_tools_bin_dir() + 'aarch64-none-elf-objdump'
     # ill-suited to C++ projects (and too slow for large executables)
     config['show_line_numbers_default'] = False
     for dir in (root / 'build', root / 'build/nx64-release'):
+        if (dir / 'build.ninja').is_file():
+            config['make_command'] = ['ninja', '-C', str(dir)]
+    
+    if version is not None:
+        dir = root / 'build' / version
         if (dir / 'build.ninja').is_file():
             config['make_command'] = ['ninja', '-C', str(dir)]
 
