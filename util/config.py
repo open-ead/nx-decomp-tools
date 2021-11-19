@@ -12,6 +12,9 @@ def get_default_version() -> str:
 
 def get_functions_csv_path(version = get_default_version()) -> Path:
     value = CONFIG["functions_csv"]
+    if version is None:
+        version = get_default_version()
+    
     if version is not None:
         value = value.replace("{version}", version)
     
