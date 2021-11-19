@@ -32,3 +32,13 @@ pub fn get_repo_root() -> Result<PathBuf> {
 pub fn get_tools_path() -> Result<PathBuf> {
     Ok(get_repo_root()?.join("tools/common"))
 }
+
+pub fn get_data_path(version: &Option<&str>) -> Result<PathBuf> {
+    let data_dir_name = if let Some(v) = version {
+        format!("data/{}", v)
+    } else {
+        "data".to_string()
+    };
+
+    Ok(get_repo_root()?.join(data_dir_name))
+}
