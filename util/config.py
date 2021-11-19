@@ -10,8 +10,11 @@ CONFIG = toml.load(get_repo_root() / "tools" / "config.toml")
 def get_default_version() -> str:
     return CONFIG.get("default_version")
 
-def get_functions_csv_path(version = get_default_version()) -> Path:
+def get_functions_csv_path(version = None) -> Path:
     value = CONFIG["functions_csv"]
+    if version is None:
+        version = get_default_version()
+    
     if version is not None:
         value = value.replace("{version}", version)
     

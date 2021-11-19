@@ -57,13 +57,13 @@ def parse_function_csv_entry(row) -> FunctionInfo:
     return FunctionInfo(addr, name, int(size), decomp_name, stat == "L", status, row)
 
 
-def get_functions_csv_path() -> Path:
-    return config.get_functions_csv_path()
+def get_functions_csv_path(version = None) -> Path:
+    return config.get_functions_csv_path(version)
 
 
-def get_functions(path: tp.Optional[Path] = None) -> tp.Iterable[FunctionInfo]:
+def get_functions(path: tp.Optional[Path] = None, version = None) -> tp.Iterable[FunctionInfo]:
     if path is None:
-        path = get_functions_csv_path()
+        path = get_functions_csv_path(version)
     with path.open() as f:
         reader = csv.reader(f)
         # Skip headers

@@ -15,6 +15,8 @@ parser.add_argument("--print-eq", "-e", action="store_true",
                     help="Print non-matching functions with minor issues")
 parser.add_argument("--print-ok", "-m", action="store_true",
                     help="Print matching functions")
+parser.add_argument("--version",
+                    help="Specify which version to load CSV from")
 args = parser.parse_args()
 
 code_size_total = 0
@@ -22,7 +24,7 @@ num_total = 0
 code_size: tp.DefaultDict[FunctionStatus, int] = defaultdict(int)
 counts: tp.DefaultDict[FunctionStatus, int] = defaultdict(int)
 
-for info in utils.get_functions():
+for info in utils.get_functions(version=args.version):
     code_size_total += info.size
     num_total += 1
 
