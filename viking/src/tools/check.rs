@@ -317,6 +317,7 @@ fn main() -> Result<()> {
         &decomp_symtab,
         decomp_glob_data_table,
         &functions,
+        &version,
     )
     .context("failed to construct FunctionChecker")?;
 
@@ -334,7 +335,7 @@ fn main() -> Result<()> {
             &decomp_elf,
             &decomp_symtab,
             &args,
-            &version
+            &version,
         )?;
     } else {
         // Normal check mode.

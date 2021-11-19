@@ -103,15 +103,7 @@ pub fn load_elf(path: &Path) -> Result<OwnedElf> {
 }
 
 pub fn load_orig_elf(version: &Option<&str>) -> Result<OwnedElf> {
-    let mut path = repo::get_repo_root()?;
-    let data_name = if version.is_some() {
-        format!("data/{}", version.as_ref().unwrap())
-    } else {
-        "data".to_string()
-    };
-    path.push(data_name);
-    path.push("main.elf");
-    load_elf(path.as_path())
+    load_elf(repo::get_data_path(version)?.join("main.elf").as_path())
 }
 
 pub fn load_decomp_elf(version: &Option<&str>) -> Result<OwnedElf> {
