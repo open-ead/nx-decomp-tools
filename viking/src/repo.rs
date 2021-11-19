@@ -32,3 +32,15 @@ pub fn get_repo_root() -> Result<PathBuf> {
 pub fn get_tools_path() -> Result<PathBuf> {
     Ok(get_repo_root()?.join("tools/common"))
 }
+
+pub fn get_data_path(version: &Option<&str>) -> Result<PathBuf> {
+    let data_dir_name = if version.is_some() {
+        format!("data/{}", version.unwrap())
+    } else {
+        "data".to_string()
+    };
+
+    Ok(get_repo_root()
+        .expect("Failed to get repo root")
+        .join(data_dir_name))
+}

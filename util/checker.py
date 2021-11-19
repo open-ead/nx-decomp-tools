@@ -1,10 +1,11 @@
 import struct
 from collections import defaultdict
 from typing import Set, DefaultDict, Dict, Optional, Tuple
+from pathlib import Path
 
 import capstone as cs
 
-from . import dsym, elf, utils
+from . import dsym, elf, utils, config
 
 _store_instructions = ("str", "strb", "strh", "stur", "sturb", "sturh")
 
@@ -38,9 +39,12 @@ class FunctionChecker:
     def get_mismatch(self) -> (int, int, str):
         return self._mismatch_addr1, self._mismatch_addr2, self._mismatch_cause
 
+    def get_data_symbols_path(self, version = config.get_default_version()) -> Path:
+        return config.get_versioned_data_path(version) / "data_symbols.csv"
+
     def load_data_for_project(self) -> None:
         self.decompiled_fns = {func.addr: func.decomp_name for func in utils.get_functions() if func.decomp_name}
-        self.get_data_symtab().load_from_csv(utils.get_repo_root() / "data" / "data_symbols.csv")
+        self.get_data_symtab().load_from_csv(self.get_data_symbols_path())
 
     def check(self, base_fn: elf.Function, my_fn: elf.Function) -> bool:
         self._reset_mismatch()

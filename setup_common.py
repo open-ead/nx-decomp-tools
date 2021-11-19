@@ -12,18 +12,10 @@ from common.util import config
 ROOT = Path(__file__).parent.parent.parent
 
 def get_target_path(version = config.get_default_version()):
-    value = ROOT / "data"
-    if version is not None:
-        value /= version
-    
-    return value / "main.nso"
+    return config.get_versioned_data_path(version) / "main.nso"
 
 def get_target_elf_path(version = config.get_default_version()):
-    value = ROOT / "data"
-    if version is not None:
-        value /= version
-    
-    return value / "main.elf"
+    return config.get_versioned_data_path(version) / "main.elf"
 
 
 def fail(error: str):

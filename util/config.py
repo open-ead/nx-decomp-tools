@@ -10,6 +10,14 @@ CONFIG = toml.load(get_repo_root() / "tools" / "config.toml")
 def get_default_version() -> str:
     return CONFIG.get("default_version")
 
+def get_versioned_data_path(version = get_default_version()) -> Path:
+    value = get_repo_root() / 'data'
+
+    if version is not None:
+        value /= version
+    
+    return value
+
 def get_functions_csv_path(version = get_default_version()) -> Path:
     value = CONFIG["functions_csv"]
     if version is not None:
@@ -21,12 +29,7 @@ def get_functions_csv_path(version = get_default_version()) -> Path:
     return get_repo_root() / value
 
 def get_base_elf(version = get_default_version()) -> Path:
-    value = get_repo_root() / 'data'
-
-    if version is not None:
-        value /= version
-
-    return value / 'main.elf'
+    return get_versioned_data_path() / 'main.elf'
 
 def get_build_target() -> str:
     return CONFIG["build_target"]
