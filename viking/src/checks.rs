@@ -481,9 +481,8 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
             return None;
         }
 
-        let orig_offset = elf::get_offset_in_file(self.orig_elf, orig_addr_ptr).ok()? as u64;
         let orig_addr = u64::from_le_bytes(
-            elf::get_elf_bytes(self.orig_elf, orig_offset, 8)
+            elf::get_elf_bytes(self.orig_elf, orig_addr_ptr, 8)
                 .ok()?
                 .try_into()
                 .ok()?,
