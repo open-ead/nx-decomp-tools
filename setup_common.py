@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 import urllib.request
 
-from util import config
+from common.util import config
 
 ROOT = Path(__file__).parent.parent.parent
 
