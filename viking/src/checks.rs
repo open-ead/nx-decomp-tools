@@ -91,10 +91,16 @@ impl KnownDataSymbolMap {
     }
 }
 
-fn get_data_symbol_csv_path() -> Result<PathBuf> {
-    let mut path = repo::get_repo_root()?;
-    path.push("data");
-    path.push("data_symbols.csv");
+fn get_data_symbol_csv_path(version: &Option<&str>) -> Result<PathBuf> {
+    let data_dir_name = if version.is_some() {
+        format!("data/{}", version.unwrap())
+    } else {
+        "data".to_string()
+    };
+    let path: PathBuf = repo::get_repo_root()
+        .expect("Failed to get repo root")
+        .join(data_dir_name)
+        .join("data_symbols.csv");
     Ok(path)
 }
 
@@ -193,9 +199,10 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         decomp_symtab: &'a elf::SymbolTableByName<'decomp_elf>,
         decomp_glob_data_table: elf::GlobDataTable,
         functions: &'functions [functions::Info],
+        version: &Option<&str>
     ) -> Result<Self> {
         let mut known_data_symbols = KnownDataSymbolMap::new();
-        known_data_symbols.load(get_data_symbol_csv_path()?.as_path(), decomp_symtab)?;
+        known_data_symbols.load(get_data_symbol_csv_path(version)?.as_path(), decomp_symtab)?;
 
         let known_functions = functions::make_known_function_map(functions);
         let orig_got_section = elf::find_section(orig_elf, ".got")?;
