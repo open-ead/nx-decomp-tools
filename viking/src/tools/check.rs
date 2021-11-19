@@ -1,5 +1,4 @@
 use anyhow::bail;
-use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use capstone as cs;
@@ -9,6 +8,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 use viking::checks::FunctionChecker;
 use viking::elf;
 use viking::functions;
@@ -21,6 +21,12 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+enum CheckResult {
+    MismatchError,
+    MatchWarn,
+    Ok,
+}
+
 /// Returns false if the program should exit with a failure code at the end.
 fn check_function(
     checker: &FunctionChecker,
@@ -29,13 +35,13 @@ fn check_function(
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
     function: &functions::Info,
-) -> Result<bool> {
+) -> Result<CheckResult> {
     let name = function.name.as_str();
     let decomp_fn = elf::get_function_by_name(decomp_elf, decomp_symtab, name);
 
     match function.status {
-        Status::NotDecompiled if decomp_fn.is_err() => return Ok(true),
-        Status::Library => return Ok(true),
+        Status::NotDecompiled if decomp_fn.is_err() => return Ok(CheckResult::Ok),
+        Status::Library => return Ok(CheckResult::Ok),
         _ => (),
     }
 
@@ -46,7 +52,7 @@ fn check_function(
             ui::format_symbol_name(name),
             error.to_string().dimmed(),
         ));
-        return Ok(true);
+        return Ok(CheckResult::Ok);
     }
 
     let decomp_fn = decomp_fn.unwrap();
@@ -80,7 +86,7 @@ fn check_function(
                     ),
                 );
                 ui::print_detail_ex(&mut lock, &format!("{}", mismatch));
-                return Ok(false);
+                return Ok(CheckResult::MismatchError);
             }
         }
 
@@ -100,13 +106,14 @@ fn check_function(
                     ui::format_symbol_name(name),
                     function.status.description(),
                 ));
+                return Ok(CheckResult::MatchWarn)
             }
         }
 
         Status::Library => unreachable!(),
     };
 
-    Ok(true)
+    Ok(CheckResult::Ok)
 }
 
 #[cold]
@@ -130,8 +137,11 @@ fn check_all(
     orig_elf: &elf::OwnedElf,
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
+    update_matching: bool,
+    version: &Option<&str>,
 ) -> Result<()> {
     let failed = AtomicBool::new(false);
+    let matching_functions: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
     functions.par_iter().try_for_each(|function| {
         CAPSTONE.with(|cs| -> Result<()> {
@@ -144,13 +154,27 @@ fn check_all(
                 decomp_symtab,
                 function,
             )?;
-            if !ok {
+            if matches!(ok, CheckResult::MismatchError) {
                 failed.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            else if matches!(ok, CheckResult::MatchWarn) {
+                matching_functions.lock().unwrap().push(function.addr);
             }
 
             Ok(())
         })
     })?;
+
+    let functions_to_update = matching_functions.lock().unwrap();
+    if update_matching {
+        let mut new_functions = functions.iter().cloned().collect_vec();
+        new_functions
+            .iter_mut()
+            .filter(|info| functions_to_update.contains(&info.addr))
+            .for_each(|info| info.status = functions::Status::Matching);
+
+        functions::write_functions(&new_functions, version)?;
+    }
 
     if failed.load(std::sync::atomic::Ordering::Relaxed) {
         bail!("found at least one error");
@@ -159,19 +183,15 @@ fn check_all(
     }
 }
 
-fn get_function_to_check_from_args(args: &[String]) -> Result<String> {
-    let mut maybe_fn_to_check: Vec<String> = args
-        .iter()
-        .filter(|s| !s.starts_with('-'))
-        .cloned()
-        .collect();
+fn get_function_to_check_from_args(args: &[String]) -> Result<Option<&str>> {
+    let mut iter = args.iter().filter(|s| !(s.starts_with('-')));
+    match (iter.next(), iter.next()) {
+        (Some(_), Some(_)) => bail!("expected only one function name (one argument that isn't prefixed with '-')"),
+        (None, None) => Ok(None),
+        (Some(s), None) => Ok(Some(s)),
 
-    ensure!(
-        maybe_fn_to_check.len() == 1,
-        "expected only one function name (one argument that isn't prefixed with '-')"
-    );
-
-    Ok(maybe_fn_to_check.remove(0))
+        (None, Some(_)) => unreachable!()
+    }
 }
 
 fn get_version_from_args_or_config(args: &[String]) -> Result<Option<&str>> {
@@ -194,11 +214,11 @@ fn check_single(
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
     args: &[String],
-    version: &Option<&str>
+    version: &Option<&str>,
+    fn_to_check: &str
 ) -> Result<()> {
-    let fn_to_check = get_function_to_check_from_args(args)?;
-    let function = functions::find_function_fuzzy(functions, &fn_to_check)
-        .with_context(|| format!("unknown function: {}", ui::format_symbol_name(&fn_to_check)))?;
+    let function = functions::find_function_fuzzy(functions, fn_to_check)
+        .with_context(|| format!("unknown function: {}", ui::format_symbol_name(fn_to_check)))?;
     let name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());
@@ -320,12 +340,9 @@ fn main() -> Result<()> {
     )
     .context("failed to construct FunctionChecker")?;
 
-    let mut single_diff = !args.is_empty();
-    if version.is_some() {
-        single_diff = args.len() >= 2;
-    }
+    let fn_to_check = get_function_to_check_from_args(&args)?;
 
-    if single_diff {
+    if fn_to_check.is_some() {
         // Single function mode.
         check_single(
             &functions,
@@ -334,11 +351,13 @@ fn main() -> Result<()> {
             &decomp_elf,
             &decomp_symtab,
             &args,
-            &version
+            &version,
+            fn_to_check.unwrap()
         )?;
     } else {
         // Normal check mode.
-        check_all(&functions, &checker, &orig_elf, &decomp_elf, &decomp_symtab)?;
+        let update_matching = args.iter().any(|s| s=="--update_matching");
+        check_all(&functions, &checker, &orig_elf, &decomp_elf, &decomp_symtab, update_matching, &version)?;
     }
 
     Ok(())
