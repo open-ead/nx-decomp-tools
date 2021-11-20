@@ -17,6 +17,7 @@ goblin = "0.4"
 itertools = "0.10.1"
 lazy-init = "0.5.0"
 lazy_static = "1.4.0"
+lexopt = "0.2.0"
 memmap = "0.6.1"
 mimalloc = { version = "*", default-features = false }
 owning_ref = "0.4.1"
