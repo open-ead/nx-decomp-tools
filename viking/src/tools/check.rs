@@ -8,7 +8,9 @@ use itertools::Itertools;
 use lexopt::prelude::*;
 use rayon::prelude::*;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 use viking::checks::FunctionChecker;
 use viking::checks::Mismatch;
 use viking::elf;
@@ -140,8 +142,11 @@ fn check_all(
     orig_elf: &elf::OwnedElf,
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
+    update_matching: bool,
+    version: &Option<&str>,
 ) -> Result<()> {
     let failed = AtomicBool::new(false);
+    let matching_functions: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
 
     functions.par_iter().try_for_each(|function| {
         CAPSTONE.with(|cs| -> Result<()> {
@@ -156,11 +161,24 @@ fn check_all(
             )?;
             if matches!(ok, CheckResult::MismatchError) {
                 failed.store(true, std::sync::atomic::Ordering::Relaxed);
+            } else if update_matching && matches!(ok, CheckResult::MatchWarn) {
+                matching_functions.lock().unwrap().insert(function.addr);
             }
 
             Ok(())
         })
     })?;
+
+    if update_matching {
+        let functions_to_update = matching_functions.lock().unwrap();
+        let mut new_functions = functions.iter().cloned().collect_vec();
+        new_functions
+            .iter_mut()
+            .filter(|info| functions_to_update.contains(&info.addr))
+            .for_each(|info| info.status = functions::Status::Matching);
+
+        functions::write_functions(&new_functions, version)?;
+    }
 
     if failed.load(std::sync::atomic::Ordering::Relaxed) {
         bail!("found at least one error");
@@ -388,6 +406,7 @@ struct Args {
     function: Option<String>,
     version: Option<String>,
     always_diff: bool,
+    update_matching: bool,
     other_args: Vec<String>,
 }
 
@@ -395,6 +414,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
     let mut function = None;
     let mut version = repo::CONFIG.get("default_version").map(|s| s.to_string());
     let mut always_diff = false;
+    let mut update_matching = false;
     let mut other_args: Vec<String> = Vec::new();
 
     let mut parser = lexopt::Parser::from_env();
@@ -402,6 +422,9 @@ fn parse_args() -> Result<Args, lexopt::Error> {
         match arg {
             Long("version") => {
                 version = Some(parser.value()?.into_string()?);
+            }
+            Long("update-matching") => {
+                update_matching = true;
             }
             Long("always-diff") => {
                 always_diff = true;
@@ -432,6 +455,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
         function,
         version,
         always_diff,
+        update_matching,
         other_args,
     })
 }
@@ -492,7 +516,15 @@ fn main() -> Result<()> {
         )?;
     } else {
         // Normal check mode.
-        check_all(&functions, &checker, &orig_elf, &decomp_elf, &decomp_symtab)?;
+        check_all(
+            &functions,
+            &checker,
+            &orig_elf,
+            &decomp_elf,
+            &decomp_symtab,
+            args.update_matching,
+            &version,
+        )?;
     }
 
     Ok(())
