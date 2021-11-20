@@ -1,11 +1,11 @@
 use anyhow::bail;
-use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use capstone as cs;
 use capstone::arch::BuildsCapstone;
 use colored::*;
 use itertools::Itertools;
+use lexopt::prelude::*;
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
@@ -169,35 +169,6 @@ fn check_all(
     }
 }
 
-fn get_function_to_check_from_args(args: &[String]) -> Result<String> {
-    let mut maybe_fn_to_check: Vec<String> = args
-        .iter()
-        .filter(|s| !s.starts_with('-'))
-        .cloned()
-        .collect();
-
-    ensure!(
-        maybe_fn_to_check.len() == 1,
-        "expected only one function name (one argument that isn't prefixed with '-')"
-    );
-
-    Ok(maybe_fn_to_check.remove(0))
-}
-
-fn get_version_from_args_or_config(args: &[String]) -> Result<Option<&str>> {
-    let mut iter = args.iter().filter_map(|s| s.strip_prefix("--version="));
-    match (iter.next(), iter.next()) {
-        (Some(_), Some(_)) => bail!("expected only one version number ('--version=XXX')"),
-        (None, None) => Ok(repo::CONFIG
-            .get("default_version")
-            .map(|s| s.as_str())
-            .unwrap_or(None)),
-        (Some(s), None) => Ok(Some(s)),
-
-        (None, Some(_)) => unreachable!(),
-    }
-}
-
 fn resolve_unknown_fn_interactively(
     ambiguous_name: &str,
     decomp_symtab: &elf::SymbolTableByName,
@@ -311,11 +282,12 @@ fn check_single(
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
     args: &[String],
+    always_diff: bool,
     version: &Option<&str>,
+    fn_to_check: &str,
 ) -> Result<()> {
-    let fn_to_check = get_function_to_check_from_args(args)?;
-    let function = functions::find_function_fuzzy(functions, &fn_to_check)
-        .with_context(|| format!("unknown function: {}", ui::format_symbol_name(&fn_to_check)))?;
+    let function = functions::find_function_fuzzy(functions, fn_to_check)
+        .with_context(|| format!("unknown function: {}", ui::format_symbol_name(fn_to_check)))?;
     let mut name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());
@@ -349,7 +321,7 @@ fn check_single(
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
         .with_context(|| format!("checking {}", name))?;
 
-    let mut should_show_diff = args.iter().any(|s| s.as_str() == "--always-diff");
+    let mut should_show_diff = always_diff;
 
     if let Some(mismatch) = &maybe_mismatch {
         eprintln!("{}\n{}", "mismatch".red().bold(), &mismatch);
@@ -359,15 +331,7 @@ fn check_single(
     }
 
     if should_show_diff {
-        let mut diff_args: Vec<String> = args
-            .iter()
-            .filter(|s| {
-                s.as_str() != fn_to_check
-                    && s.as_str() != "--always-diff"
-                    && !s.as_str().starts_with("--version=")
-            })
-            .cloned()
-            .collect();
+        let mut diff_args: Vec<String> = args.to_owned();
 
         let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
 
@@ -420,12 +384,64 @@ fn check_single(
     Ok(())
 }
 
+struct Args {
+    function: Option<String>,
+    version: Option<String>,
+    always_diff: bool,
+    other_args: Vec<String>,
+}
+
+fn parse_args() -> Result<Args, lexopt::Error> {
+    let mut function = None;
+    let mut version = repo::CONFIG.get("default_version").map(|s| s.to_string());
+    let mut always_diff = false;
+    let mut other_args: Vec<String> = Vec::new();
+
+    let mut parser = lexopt::Parser::from_env();
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Long("version") => {
+                version = Some(parser.value()?.into_string()?);
+            }
+            Long("always-diff") => {
+                always_diff = true;
+            }
+
+            Value(other_val) if function.is_none() => {
+                function = Some(other_val.into_string()?);
+            }
+            Value(other_val) if function.is_some() => {
+                other_args.push(other_val.into_string()?);
+            }
+            Long(other_long) => {
+                other_args.push(format!("--{}", other_long));
+                let opt = parser.optional_value();
+                if let Some(o) = opt {
+                    other_args.push(o.into_string()?);
+                }
+            }
+            Short(other_short) => {
+                other_args.push(format!("-{}", other_short));
+            }
+
+            _ => return Err(arg.unexpected()),
+        }
+    }
+
+    Ok(Args {
+        function,
+        version,
+        always_diff,
+        other_args,
+    })
+}
+
 fn main() -> Result<()> {
     ui::init_prompt_settings();
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = parse_args()?;
 
-    let version = get_version_from_args_or_config(&args)?;
+    let version = args.version.as_deref();
 
     let orig_elf = elf::load_orig_elf(&version).context("failed to load original ELF")?;
     let decomp_elf = elf::load_decomp_elf(&version).context("failed to load decomp ELF")?;
@@ -461,12 +477,7 @@ fn main() -> Result<()> {
     )
     .context("failed to construct FunctionChecker")?;
 
-    let mut single_diff = !args.is_empty();
-    if version.is_some() {
-        single_diff = args.len() >= 2;
-    }
-
-    if single_diff {
+    if let Some(func) = &args.function {
         // Single function mode.
         check_single(
             &functions,
@@ -474,8 +485,10 @@ fn main() -> Result<()> {
             &orig_elf,
             &decomp_elf,
             &decomp_symtab,
-            &args,
+            &args.other_args,
+            args.always_diff,
             &version,
+            func,
         )?;
     } else {
         // Normal check mode.
