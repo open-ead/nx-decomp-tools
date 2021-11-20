@@ -21,6 +21,12 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+enum CheckResult {
+    MismatchError, // If a function does not match, but is marked as such, return this error to show an appropriate exit message.
+    MatchWarn, // If a function does match, but is marked as mismatching, return this warning to indicate this and update it if invoked with `--update-matching`.
+    Ok,        // Check result matches the expected value listed in the function table.
+}
+
 /// Returns false if the program should exit with a failure code at the end.
 fn check_function(
     checker: &FunctionChecker,
@@ -29,13 +35,13 @@ fn check_function(
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
     function: &functions::Info,
-) -> Result<bool> {
+) -> Result<CheckResult> {
     let name = function.name.as_str();
     let decomp_fn = elf::get_function_by_name(decomp_elf, decomp_symtab, name);
 
     match function.status {
-        Status::NotDecompiled if decomp_fn.is_err() => return Ok(true),
-        Status::Library => return Ok(true),
+        Status::NotDecompiled if decomp_fn.is_err() => return Ok(CheckResult::Ok),
+        Status::Library => return Ok(CheckResult::Ok),
         _ => (),
     }
 
@@ -46,7 +52,7 @@ fn check_function(
             ui::format_symbol_name(name),
             error.to_string().dimmed(),
         ));
-        return Ok(true);
+        return Ok(CheckResult::Ok);
     }
 
     let decomp_fn = decomp_fn.unwrap();
@@ -80,7 +86,7 @@ fn check_function(
                     ),
                 );
                 ui::print_detail_ex(&mut lock, &format!("{}", mismatch));
-                return Ok(false);
+                return Ok(CheckResult::MismatchError);
             }
         }
 
@@ -100,13 +106,14 @@ fn check_function(
                     ui::format_symbol_name(name),
                     function.status.description(),
                 ));
+                return Ok(CheckResult::MatchWarn);
             }
         }
 
         Status::Library => unreachable!(),
     };
 
-    Ok(true)
+    Ok(CheckResult::Ok)
 }
 
 #[cold]
@@ -144,7 +151,7 @@ fn check_all(
                 decomp_symtab,
                 function,
             )?;
-            if !ok {
+            if matches!(ok, CheckResult::MismatchError) {
                 failed.store(true, std::sync::atomic::Ordering::Relaxed);
             }
 
