@@ -72,7 +72,7 @@ def set_up_compiler(version):
     system = platform.system()
     machine = platform.machine()
 
-    if(version == "4.0.1"):
+    if version == "4.0.1":
         builds = {
             # Linux
             ("Linux", "x86_64"): {
@@ -94,6 +94,8 @@ def set_up_compiler(version):
                 "dir_name": "clang+llvm-4.0.1-x86_64-apple-darwin",
             },
         }
+    else:
+        builds = {}
 
     build_info = builds.get((system, machine))
     if build_info is None:
