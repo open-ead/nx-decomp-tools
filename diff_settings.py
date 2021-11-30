@@ -18,7 +18,7 @@ def add_custom_arguments(parser):
 
 def apply(config, args):
     root = util.config.get_repo_root()
-    version = args.version
+    version = args.get("version")
     if version is None:
         version = util.config.get_default_version()
 
@@ -32,7 +32,7 @@ def apply(config, args):
     for dir in (root / 'build', root / 'build/nx64-release'):
         if (dir / 'build.ninja').is_file():
             config['make_command'] = ['ninja', '-C', str(dir)]
-    
+
     if version is not None:
         dir = root / 'build' / version
         if (dir / 'build.ninja').is_file():
