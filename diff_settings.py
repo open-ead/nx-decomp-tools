@@ -18,7 +18,15 @@ def add_custom_arguments(parser):
 
 def apply(config, args):
     root = util.config.get_repo_root()
-    version = args.get("version")
+
+    version = None
+    if isinstance(args, dict):
+        version = args.get("version")
+    else:
+        try:
+            version = args.version
+        except AttributeError:
+            pass
     if version is None:
         version = util.config.get_default_version()
 
