@@ -9,6 +9,7 @@ lto = "thin"
 
 [dependencies]
 anyhow = "1.0"
+argh = "0.1.6"
 capstone = { git = "https://github.com/leoetlino/capstone-rs" }
 colored = "2"
 cpp_demangle = "0.3.3"
@@ -31,3 +32,7 @@ toml = "0.5.8"
 [[bin]]
 name = "check"
 path = "src/tools/check.rs"
+
+[[bin]]
+name = "listsym"
+path = "src/tools/list_symbols.rs"

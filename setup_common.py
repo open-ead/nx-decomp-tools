@@ -50,8 +50,9 @@ def install_viking():
     src_path = ROOT / "tools" / "common" / "viking"
     install_path = ROOT / "tools"
     try:
-        subprocess.check_call(["cargo", "build", "--manifest-path",src_path/"Cargo.toml", "--release"])
-        (src_path / "target" / "release" / "check").rename(install_path / "check")
+        subprocess.check_call(["cargo", "build", "--manifest-path", src_path / "Cargo.toml", "--release"])
+        for tool in ["check", "listsym"]:
+            (src_path / "target" / "release" / tool).rename(install_path / tool)
     except FileNotFoundError:
         print(sys.exc_info()[0])
         fail("error: install cargo (rust) and try again")

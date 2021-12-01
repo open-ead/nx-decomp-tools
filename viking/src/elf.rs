@@ -125,7 +125,7 @@ pub fn load_decomp_elf(version: &Option<&str>) -> Result<OwnedElf> {
     load_elf(&decomp_elf_path)
 }
 
-struct SymbolStringTable<'elf> {
+pub struct SymbolStringTable<'elf> {
     bytes: &'elf [u8],
 }
 
@@ -166,6 +166,11 @@ fn filter_out_useless_syms(sym: &Sym) -> bool {
         sym.st_type(),
         sym::STT_OBJECT | sym::STT_FUNC | sym::STT_COMMON | sym::STT_TLS
     )
+}
+
+#[inline]
+pub fn is_undefined_sym(sym: &Sym) -> bool {
+    sym.st_type() == sym::STT_NOTYPE && sym.st_value == 0
 }
 
 pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName> {
