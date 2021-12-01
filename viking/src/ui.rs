@@ -57,3 +57,18 @@ pub fn print_detail_ex(lock: &mut StderrLock, msg: &str) {
     )
     .unwrap();
 }
+
+pub fn init_prompt_settings() {
+    let mut config = inquire::ui::RenderConfig::default();
+    config.prompt.att |= inquire::ui::Attributes::BOLD;
+    inquire::set_global_render_config(config);
+}
+
+pub fn clear_terminal() {
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        crossterm::cursor::MoveTo(0, 0),
+    )
+    .unwrap_or(());
+}

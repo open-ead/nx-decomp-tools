@@ -188,6 +188,62 @@ fn get_version_from_args_or_config(args: &[String]) -> Result<Option<&str>> {
     }
 }
 
+fn resolve_unknown_fn_interactively(
+    ambiguous_name: &str,
+    decomp_symtab: &elf::SymbolTableByName,
+) -> Result<String> {
+    let fail = || -> Result<String> {
+        bail!("unknown function: {}", ambiguous_name);
+    };
+
+    let mut candidates: Vec<_> = decomp_symtab
+        .par_iter()
+        .filter(|(&name, _)| {
+            functions::demangle_str(name)
+                .unwrap_or_else(|_| "".to_string())
+                .contains(ambiguous_name)
+        })
+        .collect();
+
+    candidates.sort_by_key(|(_, &sym)| sym.st_value);
+    candidates.dedup_by_key(|(_, &sym)| sym.st_value);
+
+    if candidates.is_empty() {
+        return fail();
+    }
+
+    ui::clear_terminal();
+
+    if candidates.len() == 1 {
+        let prompt = format!(
+            "{} is ambiguous; did you mean: {}",
+            ambiguous_name,
+            ui::format_symbol_name(candidates[0].0),
+        );
+
+        let confirmed = inquire::Confirm::new(&prompt).with_default(true).prompt()?;
+
+        if !confirmed {
+            return fail();
+        }
+
+        Ok(candidates[0].0.to_string())
+    } else {
+        let prompt = format!("{} is ambiguous; did you mean:", ambiguous_name);
+        let options = candidates
+            .iter()
+            .map(|(&name, _)| ui::format_symbol_name(name))
+            .collect_vec();
+
+        let selection = inquire::Select::new(&prompt, options)
+            .with_starting_cursor(0)
+            .raw_prompt()?
+            .index;
+
+        Ok(candidates[selection].0.to_string())
+    }
+}
+
 fn check_single(
     functions: &[functions::Info],
     checker: &FunctionChecker,
@@ -200,12 +256,22 @@ fn check_single(
     let fn_to_check = get_function_to_check_from_args(args)?;
     let function = functions::find_function_fuzzy(functions, &fn_to_check)
         .with_context(|| format!("unknown function: {}", ui::format_symbol_name(&fn_to_check)))?;
-    let name = function.name.as_str();
+    let mut name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());
 
     if matches!(function.status, Status::Library) {
         bail!("L functions should not be decompiled");
+    }
+
+    let resolved_name;
+    let name_was_ambiguous;
+    if !decomp_symtab.contains_key(name) {
+        resolved_name = resolve_unknown_fn_interactively(name, decomp_symtab)?;
+        name = &resolved_name;
+        name_was_ambiguous = true;
+    } else {
+        name_was_ambiguous = false;
     }
 
     let decomp_fn =
@@ -266,19 +332,23 @@ fn check_single(
         Some(_) => Status::Wip,
     };
 
-    // Update the function status if needed.
-    if function.status != new_status {
-        ui::print_note(&format!(
-            "changing status from {:?} to {:?}",
-            function.status, new_status
-        ));
+    // Update the function entry if needed.
+    let status_changed = function.status != new_status;
+    if status_changed || name_was_ambiguous {
+        if status_changed {
+            ui::print_note(&format!(
+                "changing status from {:?} to {:?}",
+                function.status, new_status
+            ));
+        }
 
         let mut new_functions = functions.iter().cloned().collect_vec();
-        new_functions
+        let new_entry = new_functions
             .iter_mut()
             .find(|info| info.addr == function.addr)
-            .unwrap()
-            .status = new_status;
+            .unwrap();
+        new_entry.status = new_status;
+        new_entry.name = name.to_string();
         functions::write_functions(&new_functions, version)?;
     }
 
@@ -286,6 +356,8 @@ fn check_single(
 }
 
 fn main() -> Result<()> {
+    ui::init_prompt_settings();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let version = get_version_from_args_or_config(&args)?;
