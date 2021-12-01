@@ -178,12 +178,13 @@ fn get_version_from_args_or_config(args: &[String]) -> Result<Option<&str>> {
     let mut iter = args.iter().filter_map(|s| s.strip_prefix("--version="));
     match (iter.next(), iter.next()) {
         (Some(_), Some(_)) => bail!("expected only one version number ('--version=XXX')"),
-        (None, None) => Ok(
-            repo::CONFIG.get("default_version").map(|s| s.as_str()).unwrap_or(None)
-        ),
+        (None, None) => Ok(repo::CONFIG
+            .get("default_version")
+            .map(|s| s.as_str())
+            .unwrap_or(None)),
         (Some(s), None) => Ok(Some(s)),
 
-        (None, Some(_)) => unreachable!()
+        (None, Some(_)) => unreachable!(),
     }
 }
 
@@ -194,7 +195,7 @@ fn check_single(
     decomp_elf: &elf::OwnedElf,
     decomp_symtab: &elf::SymbolTableByName,
     args: &[String],
-    version: &Option<&str>
+    version: &Option<&str>,
 ) -> Result<()> {
     let fn_to_check = get_function_to_check_from_args(args)?;
     let function = functions::find_function_fuzzy(functions, &fn_to_check)
@@ -221,9 +222,7 @@ fn check_single(
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
         .with_context(|| format!("checking {}", name))?;
 
-    let mut should_show_diff = args
-        .iter()
-        .any(|s| s.as_str() == "--always-diff");
+    let mut should_show_diff = args.iter().any(|s| s.as_str() == "--always-diff");
 
     if let Some(mismatch) = &maybe_mismatch {
         eprintln!("{}\n{}", "mismatch".red().bold(), &mismatch);
@@ -235,7 +234,11 @@ fn check_single(
     if should_show_diff {
         let mut diff_args: Vec<String> = args
             .iter()
-            .filter(|s| s.as_str() != fn_to_check && s.as_str() != "--always-diff" && !s.as_str().starts_with("--version="))
+            .filter(|s| {
+                s.as_str() != fn_to_check
+                    && s.as_str() != "--always-diff"
+                    && !s.as_str().starts_with("--version=")
+            })
             .cloned()
             .collect();
 
@@ -286,7 +289,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let version = get_version_from_args_or_config(&args)?;
-    
+
     let orig_elf = elf::load_orig_elf(&version).context("failed to load original ELF")?;
     let decomp_elf = elf::load_decomp_elf(&version).context("failed to load decomp ELF")?;
 
