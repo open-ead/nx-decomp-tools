@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
 use viking::checks::FunctionChecker;
+use viking::checks::Mismatch;
 use viking::elf;
 use viking::functions;
 use viking::functions::Status;
@@ -244,6 +245,56 @@ fn resolve_unknown_fn_interactively(
     }
 }
 
+fn rediff_function_after_differ(
+    checker: &FunctionChecker,
+    orig_fn: &elf::Function,
+    name: &str,
+    previous_check_result: &Option<Mismatch>,
+    version: &Option<&str>,
+) -> Result<Option<Mismatch>> {
+    // Reload the decomp ELF because it may have been modified.
+    //
+    // This can typically happen if the differ was invoked with -mw (auto rebuild);
+    // the user could have managed to match a function that used to be non-matching
+    // back when the differ was launched.
+    let decomp_elf = elf::load_decomp_elf(version).context("failed to reload decomp ELF")?;
+
+    // Also reload the symbol table from the new ELF.
+    let decomp_symtab = elf::make_symbol_map_by_name(&decomp_elf)?;
+
+    // And grab the possibly updated function code.
+    // Note that the original function doesn't need to be reloaded.
+    let decomp_fn =
+        elf::get_function_by_name(&decomp_elf, &decomp_symtab, name).with_context(|| {
+            format!(
+                "failed to reload decomp function: {}",
+                ui::format_symbol_name(name)
+            )
+        })?;
+
+    // Invoke the checker again.
+    let maybe_mismatch = checker
+        .check(&mut make_cs()?, orig_fn, &decomp_fn)
+        .with_context(|| format!("re-checking {}", name))?;
+
+    if previous_check_result.is_some() == maybe_mismatch.is_some() {
+        if let Some(mismatch) = &maybe_mismatch {
+            eprintln!("{}\n{}", "still mismatching".red().bold(), &mismatch);
+        } else {
+            eprintln!("{}", "still OK".green().bold());
+        }
+    } else {
+        // Matching status has changed.
+        if let Some(mismatch) = &maybe_mismatch {
+            eprintln!("{}\n{}", "mismatching now".red().bold(), &mismatch);
+        } else {
+            eprintln!("{}", "OK now".green().bold());
+        }
+    }
+
+    Ok(maybe_mismatch)
+}
+
 fn check_single(
     functions: &[functions::Info],
     checker: &FunctionChecker,
@@ -273,6 +324,7 @@ fn check_single(
     } else {
         name_was_ambiguous = false;
     }
+    let name = name;
 
     let decomp_fn =
         elf::get_function_by_name(decomp_elf, decomp_symtab, name).with_context(|| {
@@ -284,7 +336,7 @@ fn check_single(
 
     let orig_fn = elf::get_function(orig_elf, function.addr, function.size as u64)?;
 
-    let maybe_mismatch = checker
+    let mut maybe_mismatch = checker
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
         .with_context(|| format!("checking {}", name))?;
 
@@ -325,6 +377,10 @@ fn check_single(
             .args(diff_args)
             .status()
             .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
+
+        maybe_mismatch =
+            rediff_function_after_differ(checker, &orig_fn, name, &maybe_mismatch, version)
+                .context("failed to rediff")?;
     }
 
     let new_status = match maybe_mismatch {
