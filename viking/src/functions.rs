@@ -196,6 +196,20 @@ pub fn make_known_function_map(functions: &[Info]) -> FxHashMap<u64, &Info> {
     known_functions
 }
 
+pub fn make_known_function_name_map(functions: &[Info]) -> FxHashMap<&str, &Info> {
+    let mut known_functions =
+        FxHashMap::with_capacity_and_hasher(functions.len(), Default::default());
+
+    for function in functions {
+        if function.name.is_empty() {
+            continue;
+        }
+        known_functions.insert(function.name.as_str(), function);
+    }
+
+    known_functions
+}
+
 /// Demangle a C++ symbol.
 pub fn demangle_str(name: &str) -> Result<String> {
     if !name.starts_with("_Z") {
