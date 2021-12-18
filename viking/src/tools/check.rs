@@ -4,6 +4,7 @@ use anyhow::Result;
 use capstone as cs;
 use capstone::arch::BuildsCapstone;
 use colored::*;
+use goblin::elf::sym::STT_FUNC;
 use itertools::Itertools;
 use lexopt::prelude::*;
 use rayon::prelude::*;
@@ -197,10 +198,11 @@ fn resolve_unknown_fn_interactively(
 
     let mut candidates: Vec<_> = decomp_symtab
         .par_iter()
-        .filter(|(&name, _)| {
-            functions::demangle_str(name)
-                .unwrap_or_else(|_| "".to_string())
-                .contains(ambiguous_name)
+        .filter(|(&name, &sym)| {
+            sym.st_type() == STT_FUNC
+                && functions::demangle_str(name)
+                    .unwrap_or_else(|_| "".to_string())
+                    .contains(ambiguous_name)
         })
         .collect();
 
