@@ -204,6 +204,9 @@ fn resolve_unknown_fn_interactively(
         })
         .collect();
 
+    // Sort candidates by their name, then deduplicate them based on the address.
+    // This ensures that e.g. C1 symbols take precedence over C2 symbols (if both are present).
+    candidates.sort_by_key(|(&name, _)| name);
     candidates.sort_by_key(|(_, &sym)| sym.st_value);
     candidates.dedup_by_key(|(_, &sym)| sym.st_value);
 
