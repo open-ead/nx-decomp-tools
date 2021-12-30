@@ -88,11 +88,11 @@ def set_up_compiler(version):
             # macOS
             ("Darwin", "x86_64"): {
                 "url": "https://releases.llvm.org/4.0.1/clang+llvm-4.0.1-x86_64-apple-darwin.tar.xz",
-                "dir_name": "clang+llvm-4.0.1-x86_64-apple-darwin",
+                "dir_name": "clang+llvm-4.0.1-x86_64-apple-macosx10.9.0",
             },
             ("Darwin", "aarch64"): {
                 "url": "https://releases.llvm.org/4.0.1/clang+llvm-4.0.1-x86_64-apple-darwin.tar.xz",
-                "dir_name": "clang+llvm-4.0.1-x86_64-apple-darwin",
+                "dir_name": "clang+llvm-4.0.1-x86_64-apple-macosx10.9.0",
             },
         }
     else:
