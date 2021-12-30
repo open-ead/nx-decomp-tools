@@ -763,7 +763,7 @@ checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
 
 [[package]]
 name = "viking"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "argh",
