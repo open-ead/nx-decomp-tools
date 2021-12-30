@@ -191,6 +191,7 @@ fn check_all(
 fn resolve_unknown_fn_interactively(
     ambiguous_name: &str,
     decomp_symtab: &elf::SymbolTableByName,
+    functions: &[functions::Info],
 ) -> Result<String> {
     let fail = || -> Result<String> {
         bail!("unknown function: {}", ambiguous_name);
@@ -211,6 +212,15 @@ fn resolve_unknown_fn_interactively(
     candidates.sort_by_key(|(&name, _)| name);
     candidates.sort_by_key(|(_, &sym)| sym.st_value);
     candidates.dedup_by_key(|(_, &sym)| sym.st_value);
+
+    // Build a set of functions that have already been decompiled and listed,
+    // so we don't suggest them to the user again.
+    let decompiled_functions: HashSet<&str> = functions
+        .iter()
+        .filter(|info| info.is_decompiled())
+        .map(|info| info.name.as_str())
+        .collect();
+    candidates.retain(|(&name, _)| !decompiled_functions.contains(name));
 
     if candidates.is_empty() {
         return fail();
@@ -322,7 +332,7 @@ fn check_single(
     let resolved_name;
     let name_was_ambiguous;
     if !decomp_symtab.contains_key(name) {
-        resolved_name = resolve_unknown_fn_interactively(name, decomp_symtab)?;
+        resolved_name = resolve_unknown_fn_interactively(name, decomp_symtab, functions)?;
         name = &resolved_name;
         name_was_ambiguous = true;
     } else {
