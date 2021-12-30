@@ -259,7 +259,7 @@ fn resolve_unknown_fn_interactively(
 }
 
 fn rediff_function_after_differ(
-    checker: &FunctionChecker,
+    functions: &[functions::Info],
     orig_fn: &elf::Function,
     name: &str,
     previous_check_result: &Option<Mismatch>,
@@ -274,6 +274,7 @@ fn rediff_function_after_differ(
 
     // Also reload the symbol table from the new ELF.
     let decomp_symtab = elf::make_symbol_map_by_name(&decomp_elf)?;
+    let decomp_glob_data_table = elf::build_glob_data_table(&decomp_elf)?;
 
     // And grab the possibly updated function code.
     // Note that the original function doesn't need to be reloaded.
@@ -286,6 +287,15 @@ fn rediff_function_after_differ(
         })?;
 
     // Invoke the checker again.
+    let checker = FunctionChecker::new(
+        orig_fn.owner_elf,
+        &decomp_elf,
+        &decomp_symtab,
+        decomp_glob_data_table,
+        functions,
+        version,
+    )?;
+
     let maybe_mismatch = checker
         .check(&mut make_cs()?, orig_fn, &decomp_fn)
         .with_context(|| format!("re-checking {}", name))?;
@@ -385,7 +395,7 @@ fn check_single(
             .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
 
         maybe_mismatch =
-            rediff_function_after_differ(checker, &orig_fn, name, &maybe_mismatch, version)
+            rediff_function_after_differ(functions, &orig_fn, name, &maybe_mismatch, version)
                 .context("failed to rediff")?;
     }
 

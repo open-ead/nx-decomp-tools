@@ -23,6 +23,8 @@ pub type AddrToNameMap<'a> = FxHashMap<u64, &'a str>;
 pub type GlobDataTable = FxHashMap<u64, u64>;
 
 pub struct Function<'a> {
+    /// The ELF this function comes from.
+    pub owner_elf: &'a OwnedElf,
     /// The virtual address of the function in its containing executable.
     /// *Note*: does not contain the IDA base (0x7100000000).
     pub addr: u64,
@@ -308,6 +310,7 @@ pub fn get_elf_bytes(elf: &OwnedElf, addr: u64, size: u64) -> Result<&[u8]> {
 
 pub fn get_function(elf: &OwnedElf, addr: u64, size: u64) -> Result<Function> {
     Ok(Function {
+        owner_elf: elf,
         addr,
         code: get_elf_bytes(elf, addr, size)?,
     })
