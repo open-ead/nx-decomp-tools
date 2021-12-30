@@ -109,7 +109,7 @@ impl std::fmt::Display for ReferenceDiff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "wrong reference to {ref} {ref_name}\n\
+            "incorrect reference; expected to see {ref} {ref_name}\n\
             --> decomp source code is referencing {actual} {actual_name}\n\
             --> expected to see {expected} to match original code",
             ref=ui::format_address(self.referenced_symbol),
@@ -143,7 +143,7 @@ impl std::fmt::Display for MismatchCause {
             Self::FunctionCall(diff) => write!(f, "wrong function call\n{}", diff),
             Self::DataReference(diff) => write!(f, "wrong data reference\n{}", diff),
             Self::Immediate => write!(f, "wrong immediate"),
-            Self::Unknown => write!(f, "unknown reason; check diff.py"),
+            Self::Unknown => write!(f, "unknown reason"),
         }
     }
 }
