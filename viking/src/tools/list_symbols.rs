@@ -3,7 +3,7 @@ use argh::FromArgs;
 use colored::Colorize;
 use goblin::{
     elf::Sym,
-    elf64::sym::{STT_NOTYPE, STT_OBJECT},
+    elf64::sym::{STT_FILE, STT_NOTYPE, STT_OBJECT},
 };
 use itertools::Itertools;
 use viking::{elf, functions};
@@ -45,6 +45,10 @@ fn main() -> Result<()> {
 
     let filter = |sym: &Sym| {
         if sym.st_type() == STT_NOTYPE && sym.st_value != 0 {
+            return false;
+        }
+
+        if sym.st_type() == STT_FILE {
             return false;
         }
 
