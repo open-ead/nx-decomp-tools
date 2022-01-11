@@ -61,7 +61,7 @@ def get_functions_csv_path(version = None) -> Path:
     return config.get_functions_csv_path(version)
 
 
-def get_functions(path: tp.Optional[Path] = None, version = None) -> tp.Iterable[FunctionInfo]:
+def get_functions(path: tp.Optional[Path] = None, version = None, all=False) -> tp.Iterable[FunctionInfo]:
     if path is None:
         path = get_functions_csv_path(version)
     with path.open() as f:
@@ -72,7 +72,7 @@ def get_functions(path: tp.Optional[Path] = None, version = None) -> tp.Iterable
             try:
                 entry = parse_function_csv_entry(row)
                 # excluded library function
-                if entry.library:
+                if entry.library and not all:
                     continue
                 yield entry
             except ValueError as e:

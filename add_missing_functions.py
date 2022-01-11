@@ -16,19 +16,20 @@ def main() -> None:
 
     csv_path = Path(args.csv_path)
 
-    known_fn_addrs: Set[int] = {func.addr for func in utils.get_functions()}
+    known_fn_addrs: Set[int] = {func.addr for func in utils.get_functions(all=True)}
     new_fns: List[utils.FunctionInfo] = []
-    for func in utils.get_functions(csv_path):
+    for func in utils.get_functions(csv_path, all=True):
         if func.addr not in known_fn_addrs:
             new_fns.append(func)
 
     new_fn_list: List[utils.FunctionInfo] = []
-    new_fn_list.extend(utils.get_functions())
+    new_fn_list.extend(utils.get_functions(all=True))
     new_fn_list.extend(new_fns)
     new_fn_list.sort(key=lambda func: func.addr)
 
     # Output the modified function CSV.
     writer = csv.writer(sys.stdout, lineterminator="\n")
+    writer.writerow("Address,Quality,Size,Name".split(","))
     for func in new_fn_list:
         writer.writerow(func.raw_row)
 
