@@ -42,4 +42,4 @@ with open(csv_path, "r") as f:
         addr = int(fn[0], 16)
         name = fn[3]
         if can_overwrite_name(addr, name):
-            idc.set_name(addr, name)
+            idc.set_name(addr, name, idc.SN_CHECK | idc.SN_NOWARN)
