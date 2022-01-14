@@ -21,7 +21,7 @@ def main() -> None:
     new_fns: List[utils.FunctionInfo] = []
     for func in utils.get_functions(csv_path, all=True):
         if func.addr in known_fn_addrs:
-            if names[func.addr] == "" and not func.name.startswith("_Z"):
+            if not names[func.addr].startswith("_") and not func.name.startswith("_Z"):
                 names[func.addr] = func.name
         else:
             new_fns.append(func)
