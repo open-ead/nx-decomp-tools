@@ -90,7 +90,7 @@ def set_up_compiler(version):
                 "url": "https://releases.llvm.org/4.0.1/clang+llvm-4.0.1-x86_64-apple-darwin.tar.xz",
                 "dir_name": "clang+llvm-4.0.1-x86_64-apple-macosx10.9.0",
             },
-            ("Darwin", "aarch64"): {
+            ("Darwin", "arm64"): {
                 "url": "https://releases.llvm.org/4.0.1/clang+llvm-4.0.1-x86_64-apple-darwin.tar.xz",
                 "dir_name": "clang+llvm-4.0.1-x86_64-apple-macosx10.9.0",
             },
