@@ -51,7 +51,7 @@ def install_viking():
     install_path = ROOT / "tools"
     try:
         subprocess.check_call(["cargo", "build", "--manifest-path", src_path / "Cargo.toml", "--release"])
-        for tool in ["check", "listsym"]:
+        for tool in ["check", "listsym", "decompme"]:
             (src_path / "target" / "release" / tool).rename(install_path / tool)
     except FileNotFoundError:
         print(sys.exc_info()[0])
