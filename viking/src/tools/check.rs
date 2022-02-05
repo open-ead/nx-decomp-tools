@@ -437,7 +437,7 @@ struct Args {
 
 fn parse_args() -> Result<Args, lexopt::Error> {
     let mut function = None;
-    let mut version = repo::CONFIG.get("default_version").map(|s| s.to_string());
+    let mut version = repo::get_config().default_version.clone();
     let mut always_diff = false;
     let mut update_matching = false;
     let mut other_args: Vec<String> = Vec::new();

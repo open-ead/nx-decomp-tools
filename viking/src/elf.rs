@@ -115,14 +115,10 @@ pub fn load_decomp_elf(version: &Option<&str>) -> Result<OwnedElf> {
         "build".to_string()
     };
 
-    let build_target: String = repo::CONFIG["build_target"]
-        .as_str()
-        .expect("Failed to read \"build_target\" from config TOML")
-        .to_string();
     let decomp_elf_path: PathBuf = repo::get_repo_root()
         .expect("Failed to get repo root")
         .join(build_dir_name)
-        .join(build_target.as_str());
+        .join(&repo::get_config().build_target);
 
     load_elf(&decomp_elf_path)
 }

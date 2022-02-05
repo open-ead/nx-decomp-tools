@@ -166,8 +166,10 @@ pub fn write_functions_to_path(csv_path: &Path, functions: &[Info]) -> Result<()
 
 pub fn get_functions_csv_path(version: &Option<&str>) -> PathBuf {
     let mut path = repo::get_repo_root().expect("Failed to get repo root");
-    let config_functions_csv = repo::CONFIG["functions_csv"].as_str().expect("Failed to read \"functions_csv\" from config TOML");
-    let functions_csv = version.map(|s| config_functions_csv.replace("{version}", s)).unwrap_or_else(|| config_functions_csv.to_string());
+    let config_functions_csv = repo::get_config().functions_csv.clone();
+    let functions_csv = version
+        .map(|s| config_functions_csv.replace("{version}", s))
+        .unwrap_or(config_functions_csv);
     path.push(functions_csv);
 
     path
