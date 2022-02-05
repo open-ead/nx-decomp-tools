@@ -109,15 +109,8 @@ pub fn load_orig_elf(version: &Option<&str>) -> Result<OwnedElf> {
 }
 
 pub fn load_decomp_elf(version: &Option<&str>) -> Result<OwnedElf> {
-    let build_dir_name = if version.is_some() {
-        format!("build/{}", version.unwrap())
-    } else {
-        "build".to_string()
-    };
-
-    let decomp_elf_path: PathBuf = repo::get_repo_root()
-        .expect("Failed to get repo root")
-        .join(build_dir_name)
+    let decomp_elf_path: PathBuf = repo::get_build_path(version)
+        .expect("Failed to get build path")
         .join(&repo::get_config().build_target);
 
     load_elf(&decomp_elf_path)
