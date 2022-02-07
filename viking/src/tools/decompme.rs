@@ -204,8 +204,11 @@ impl std::fmt::Display for InstructionWrapper {
     }
 }
 
-fn get_disassembly(function: &elf::Function) -> Result<String> {
+fn get_disassembly(function_info: &functions::Info, function: &elf::Function) -> Result<String> {
     let mut disassembly = String::new();
+
+    disassembly += &function_info.name;
+    disassembly += ":\n";
 
     let iter = bad64::disasm(function.code, function.addr);
 
@@ -240,7 +243,7 @@ fn main() -> Result<()> {
 
     let orig_elf = elf::load_orig_elf(&args.version.as_deref())?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
-    let disassembly = get_disassembly(&function)?;
+    let disassembly = get_disassembly(function_info, &function)?;
 
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
