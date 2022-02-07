@@ -7,6 +7,16 @@ pub struct Config {
     pub build_target: String,
     pub functions_csv: String,
     pub default_version: Option<String>,
+    pub decomp_me: Option<ConfigDecompMe>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ConfigDecompMe {
+    pub compiler_name: String,
+
+    /// Compilation flags that are used for creating scratches.
+    /// Can be overridden using a compilation database.
+    pub default_compile_flags: String,
 }
 
 lazy_static! {
