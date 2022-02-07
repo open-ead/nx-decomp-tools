@@ -184,6 +184,7 @@ fn check_all(
     if failed.load(std::sync::atomic::Ordering::Relaxed) {
         bail!("found at least one error");
     } else {
+        eprintln!("{}", "OK".green().bold());
         Ok(())
     }
 }
