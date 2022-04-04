@@ -439,6 +439,7 @@ struct Args {
     version: Option<String>,
     always_diff: bool,
     update_matching: bool,
+    print_help: bool,
     other_args: Vec<String>,
 }
 
@@ -447,6 +448,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
     let mut version = repo::get_config().default_version.clone();
     let mut always_diff = false;
     let mut update_matching = false;
+    let mut print_help = false;
     let mut other_args: Vec<String> = Vec::new();
 
     let mut parser = lexopt::Parser::from_env();
@@ -460,6 +462,13 @@ fn parse_args() -> Result<Args, lexopt::Error> {
             }
             Long("always-diff") => {
                 always_diff = true;
+            }
+
+            Long("help") => {
+                print_help = true;
+            }
+            Short('h') => {
+                print_help = true;
             }
 
             Value(other_val) if function.is_none() => {
@@ -488,14 +497,66 @@ fn parse_args() -> Result<Args, lexopt::Error> {
         version,
         always_diff,
         update_matching,
+        print_help,
         other_args,
     })
+}
+
+fn print_help() -> Result<()> {
+    println!(
+"Usage: check [function name] [--version VERSION] [--update-matching] [--always-diff] [asm-differ arguments]
+    
+Checks if the compiled bytecode of a function matches the assembly found within the game elf. If not, show the differences between them.
+If no function name is provided, all functions within the respository function list will be checked.
+
+optional arguments:
+
+ -h, --help             Show this help message and exit
+ --version VERSION      Check the function against version VERSION of the game elf
+ --update-matching      If a function does match, but is marked as mismatching, mark it as matching in the function list
+ --always-diff          Show an assembly diff, even if the function matches
+All further arguments are forwarded onto asm-differ. 
+
+asm-differ arguments:"
+);
+
+    let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
+
+    // By default, invoking asm-differ using std::process:Process doesn't seem to allow argparse
+    // (the python module asm-differ uses to print its help text) to correctly determine the number of columns in the host terminal.
+    // To work around this, we'll detect that for it, and set it manually via the COLUMNS environment variable
+    let num_columns = match termsize::get() {
+        Some(size) => size.cols,
+        None => 240,
+    };
+
+    let output = std::process::Command::new(&differ_path)
+        .current_dir(repo::get_tools_path()?)
+        .arg("--help")
+        .env("COLUMNS", num_columns.to_string())
+        .output()
+        .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
+
+    let asm_differ_help = String::from_utf8_lossy(&output.stdout);
+    
+    let asm_differ_arguments = asm_differ_help
+                                .split("optional arguments:")
+                                .collect::<Vec<&str>>()[1];
+
+    println!("{}", asm_differ_arguments);
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
     ui::init_prompt_settings();
 
     let args = parse_args()?;
+
+    if args.print_help {
+        print_help()?;
+        return Ok(());
+    }
 
     let version = args.version.as_deref();
 
