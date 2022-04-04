@@ -402,7 +402,13 @@ fn check_single(
 
     let new_status = match maybe_mismatch {
         None => Status::Matching,
-        Some(_) => Status::Wip,
+        Some(_) => {
+            if function.status == Status::NotDecompiled {
+                Status::Wip
+            } else {
+                function.status.clone()
+            }
+        }
     };
 
     // Update the function entry if needed.
