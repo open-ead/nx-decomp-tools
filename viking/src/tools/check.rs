@@ -464,7 +464,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
                 always_diff = true;
             }
 
-            Long("help") => {
+            Long("help") | Short('h') => {
                 print_help = true;
             }
             Short('h') => {
@@ -507,13 +507,13 @@ fn print_help() -> Result<()> {
 "Usage: check [function name] [--version VERSION] [--update-matching] [--always-diff] [asm-differ arguments]
     
 Checks if the compiled bytecode of a function matches the assembly found within the game elf. If not, show the differences between them.
-If no function name is provided, all functions within the respository function list will be checked.
+If no function name is provided, all functions within the repository function list will be checked.
 
 optional arguments:
 
  -h, --help             Show this help message and exit
  --version VERSION      Check the function against version VERSION of the game elf
- --update-matching      If a function does match, but is marked as mismatching, mark it as matching in the function list
+ --update-matching      If a function does match, but is not marked as matching, mark it as matching in the function list
  --always-diff          Show an assembly diff, even if the function matches
 All further arguments are forwarded onto asm-differ. 
 
