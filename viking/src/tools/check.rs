@@ -467,9 +467,6 @@ fn parse_args() -> Result<Args, lexopt::Error> {
             Long("help") | Short('h') => {
                 print_help = true;
             }
-            Short('h') => {
-                print_help = true;
-            }
 
             Value(other_val) if function.is_none() => {
                 function = Some(other_val.into_string()?);
@@ -525,9 +522,9 @@ asm-differ arguments:"
     // By default, invoking asm-differ using std::process:Process doesn't seem to allow argparse
     // (the python module asm-differ uses to print its help text) to correctly determine the number of columns in the host terminal.
     // To work around this, we'll detect that for it, and set it manually via the COLUMNS environment variable
-    let num_columns = match termsize::get() {
-        Some(size) => size.cols,
-        None => 240,
+    let num_columns = match crossterm::terminal::size() {
+        Ok((num_columns, _num_rows)) => num_columns,
+        Err(_) => 240,
     };
 
     let output = std::process::Command::new(&differ_path)
