@@ -502,7 +502,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
 fn print_help() -> Result<()> {
     println!(
 "Usage: check [function name] [--version VERSION] [--update-matching] [--always-diff] [asm-differ arguments]
-    
+
 Checks if the compiled bytecode of a function matches the assembly found within the game elf. If not, show the differences between them.
 If no function name is provided, all functions within the repository function list will be checked.
 
@@ -512,7 +512,7 @@ optional arguments:
  --version VERSION      Check the function against version VERSION of the game elf
  --update-matching      If a function does match, but is not marked as matching, mark it as matching in the function list
  --always-diff          Show an assembly diff, even if the function matches
-All further arguments are forwarded onto asm-differ. 
+All further arguments are forwarded onto asm-differ.
 
 asm-differ arguments:"
 );
@@ -535,10 +535,10 @@ asm-differ arguments:"
         .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
 
     let asm_differ_help = String::from_utf8_lossy(&output.stdout);
-    
+
     let asm_differ_arguments = asm_differ_help
-                                .split("optional arguments:")
-                                .collect::<Vec<&str>>()[1];
+        .split("optional arguments:")
+        .collect::<Vec<&str>>()[1];
 
     println!("{}", asm_differ_arguments);
 
