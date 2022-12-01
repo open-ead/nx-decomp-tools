@@ -538,7 +538,17 @@ asm-differ arguments:"
 
     let asm_differ_arguments = asm_differ_help
         .split("optional arguments:")
-        .collect::<Vec<&str>>()[1];
+        .collect::<Vec<&str>>()
+        .get(1)
+        .copied()
+        .or_else(|| {
+            asm_differ_help
+                .split("options:")
+                .collect::<Vec<&str>>()
+                .get(1)
+                .copied()
+        })
+        .unwrap_or(&asm_differ_help);
 
     println!("{}", asm_differ_arguments);
 
