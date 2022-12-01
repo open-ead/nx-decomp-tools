@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use addr2line::fallible_iterator::FallibleIterator;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -93,19 +94,15 @@ fn run_preprocessor(entry: &json_compilation_db::Entry) -> Result<String> {
 }
 
 fn get_translation_unit(
-    args: &Args,
+    source_file: &str,
     compilation_db: &json_compilation_db::Entries,
 ) -> Result<TranslationUnit> {
-    if args.source_file.is_none() {
-        bail!("no source file specified")
-    }
-
-    let canonical_path = PathBuf::from(args.source_file.as_ref().unwrap()).canonicalize()?;
+    let canonical_path = PathBuf::from(source_file).canonicalize()?;
 
     let entry = compilation_db
         .iter()
         .find(|entry| entry.file == canonical_path)
-        .context("failed to find source file")?;
+        .with_context(|| format!("failed to find source file {}", source_file))?;
 
     let command = entry.arguments.clone();
     let contents = run_preprocessor(entry).context("failed to run preprocessor")?;
@@ -225,6 +222,29 @@ fn get_disassembly(function_info: &functions::Info, function: &elf::Function) ->
     Ok(disassembly)
 }
 
+/// Returns a path to the source file where the specified function is defined.
+fn deduce_source_file_from_debug_info(
+    decomp_elf: &elf::OwnedElf,
+    function_name: &str,
+) -> Result<String> {
+    let symbol = elf::find_function_symbol_by_name(decomp_elf, function_name)?;
+
+    let data: &[u8] = &decomp_elf.as_owner().1;
+    let file = addr2line::object::read::File::parse(data)?;
+    let ctx = addr2line::Context::new(&file)?;
+
+    // Grab the location of the last frame (we choose the last frame to ignore inline function frames).
+    let frame = ctx
+        .find_frames(symbol.st_value)?
+        .last()?
+        .context("no frame found")?;
+
+    let loc = frame.location.context("no location found")?;
+    let file = loc.file.context("no file found")?;
+
+    Ok(file.to_string())
+}
+
 fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
@@ -241,7 +261,9 @@ fn main() -> Result<()> {
 
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
-    let orig_elf = elf::load_orig_elf(&args.version.as_deref())?;
+    let version = args.version.as_deref();
+    let decomp_elf = elf::load_decomp_elf(&version)?;
+    let orig_elf = elf::load_orig_elf(&version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
 
@@ -251,11 +273,18 @@ fn main() -> Result<()> {
 
     // Fill in compile flags and the context using the compilation database
     // and the specified source file.
-    if args.source_file.is_some() {
+    let source_file = args
+        .source_file
+        .clone()
+        .or_else(|| deduce_source_file_from_debug_info(&decomp_elf, &function_info.name).ok());
+
+    if let Some(source_file) = source_file.as_deref() {
+        println!("source file: {}", &source_file.dimmed());
+
         let compilation_db =
             load_compilation_database(&args).context("failed to load compilation database")?;
 
-        let tu = get_translation_unit(&args, &compilation_db)
+        let tu = get_translation_unit(source_file, &compilation_db)
             .context("failed to get translation unit")?;
 
         context = tu.contents.clone();

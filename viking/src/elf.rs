@@ -164,6 +164,17 @@ pub fn is_undefined_sym(sym: &Sym) -> bool {
     sym.st_type() == sym::STT_NOTYPE && sym.st_value == 0
 }
 
+pub fn find_function_symbol_by_name(elf: &OwnedElf, name: &str) -> Result<Sym> {
+    let strtab = SymbolStringTable::from_elf(elf)?;
+
+    for symbol in elf.syms.iter().filter(filter_out_useless_syms) {
+        if name == strtab.get_string(symbol.st_name) {
+            return Ok(symbol);
+        }
+    }
+    bail!("unknown function")
+}
+
 pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName> {
     let mut map = SymbolTableByName::with_capacity_and_hasher(
         elf.syms.iter().filter(filter_out_useless_syms).count(),
