@@ -194,7 +194,7 @@ impl std::fmt::Display for InstructionWrapper {
 
             match op {
                 bad64::Operand::Label(bad64::Imm::Unsigned(x)) => {
-                    write!(f, " {}", x - insn.address())?
+                    write!(f, " {}", x.wrapping_sub(insn.address()))?
                 }
                 _ => write!(f, " {}", op)?,
             }
