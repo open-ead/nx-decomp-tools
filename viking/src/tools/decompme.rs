@@ -267,9 +267,17 @@ fn main() -> Result<()> {
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
 
+    let source_code = format!(
+        "// function name: {}\n\
+         // original address: {:#x} \n\
+         \n\
+         // move the target function from the context to the source tab",
+        &function_info.name,
+        function_info.addr | functions::ADDRESS_BASE,
+    );
+
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
-    let source_code = "// move the target function from the context to the source tab";
 
     // Fill in compile flags and the context using the compilation database
     // and the specified source file.
@@ -333,7 +341,7 @@ fn main() -> Result<()> {
         function_info,
         &flags,
         &context,
-        source_code,
+        &source_code,
         &disassembly,
     )
     .context("failed to create scratch")?;
