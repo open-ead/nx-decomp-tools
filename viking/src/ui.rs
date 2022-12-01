@@ -47,15 +47,7 @@ pub fn print_detail(msg: &str) {
 }
 
 pub fn print_detail_ex(lock: &mut StderrLock, msg: &str) {
-    writeln!(
-        lock,
-        "{}\n",
-        indent(
-            &msg.clear().to_string(),
-            &"  │  ".bold().dimmed().to_string()
-        )
-    )
-    .unwrap();
+    writeln!(lock, "{}\n", indent(&msg.clear(), &"  │  ".bold().dimmed())).unwrap();
 }
 
 pub fn init_prompt_settings() {
