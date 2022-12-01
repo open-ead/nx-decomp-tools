@@ -78,6 +78,90 @@ fn remove_c_and_output_flags(command: &mut Vec<String>) {
     });
 }
 
+fn get_include_paths(stderr: &str) -> Vec<&str> {
+    stderr
+        .lines()
+        .skip_while(|&line| line != "#include <...> search starts here:")
+        .take_while(|&line| line != "End of search list.")
+        .map(|line| line.split_whitespace().next().unwrap())
+        .filter(|&path| std::path::Path::new(path).is_dir())
+        .collect()
+}
+
+fn uninclude_system_includes<'a>(stdout: &'a str, include_paths: &Vec<&str>) -> String {
+    let mut result = String::with_capacity(stdout.len());
+
+    // The current include stack.
+    struct Include<'a> {
+        file: &'a str,
+        is_system_header: bool,
+    }
+    let mut include_stack: Vec<Include> = Vec::new();
+
+    let is_including_system_header = |include_stack: &Vec<Include>| {
+        if let Some(include) = include_stack.last() {
+            include.is_system_header
+        } else {
+            false
+        }
+    };
+
+    for line in stdout.lines() {
+        if line.starts_with("# ") {
+            let split: Vec<_> = line.split(' ').collect();
+            if split.len() >= 4 {
+                // [#, lineno, "/path/to/source.cpp", 1, 3]
+                let file = split[2].trim_matches('"');
+                let flags = &split[3..];
+                let is_system_header = flags.contains(&"3");
+
+                let was_including_system_header = is_including_system_header(&include_stack);
+
+                if flags.contains(&"1") {
+                    // Start of a new file.
+                    include_stack.push(Include {
+                        file,
+                        is_system_header,
+                    });
+
+                    if is_system_header && !was_including_system_header {
+                        for path in include_paths {
+                            if let Some(relative_include) = file.strip_prefix(path) {
+                                result
+                                    .push_str(&format!("#include <{}>\n", &relative_include[1..]));
+                                break;
+                            }
+                        }
+                    }
+                } else if flags.contains(&"2") {
+                    // End of an included file.
+                    let popped = include_stack.pop();
+                    assert!(popped.is_some(), "cannot pop empty include stack");
+
+                    if let Some(current_include) = include_stack.last() {
+                        assert_eq!(current_include.file, file);
+                    }
+
+                    // Skip the '# ... 2' line as the corresponding '# ... 1' was not emitted.
+                    if was_including_system_header {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Skip lines that come from a system header, as those have been replaced with an #include.
+        if is_including_system_header(&include_stack) {
+            continue;
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    result
+}
+
 fn run_preprocessor(entry: &json_compilation_db::Entry) -> Result<String> {
     let mut command = entry.arguments.clone();
     remove_c_and_output_flags(&mut command);
@@ -86,11 +170,21 @@ fn run_preprocessor(entry: &json_compilation_db::Entry) -> Result<String> {
         .current_dir(&entry.directory)
         .args(&command[1..])
         .arg("-E")
+        .arg("-C")
+        .arg("-v")
         .output()?;
 
     // Yes, we're assuming the source code uses UTF-8.
     // No, we don't care about other encodings like SJIS.
-    Ok(std::str::from_utf8(&output.stdout)?.to_string())
+    let stdout = std::str::from_utf8(&output.stdout)?;
+    let stderr = std::str::from_utf8(&output.stderr)?;
+
+    // Post-process the preprocessed output to make it smaller by un-including
+    // system headers (e.g. C and C++ standard library headers).
+    let include_paths = get_include_paths(stderr);
+    let result = uninclude_system_includes(stdout, &include_paths);
+
+    Ok(result)
 }
 
 fn get_translation_unit(
