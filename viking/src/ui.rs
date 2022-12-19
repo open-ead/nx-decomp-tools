@@ -1,4 +1,7 @@
+use anyhow::bail;
+use anyhow::Result;
 use colored::*;
+use itertools::Itertools;
 use std::io::StderrLock;
 use std::io::Write;
 use textwrap::indent;
@@ -63,4 +66,37 @@ pub fn clear_terminal() {
         crossterm::cursor::MoveTo(0, 0),
     )
     .unwrap_or(());
+}
+
+pub fn fuzzy_search_function_interactively<'a>(
+    functions: &'a [functions::Info],
+    name: &str,
+) -> Result<&'a functions::Info> {
+    let candidates = functions::fuzzy_search(functions, name);
+    match candidates[..] {
+        [] => bail!("no match for {}", format_symbol_name(name)),
+        [exact_match] => Ok(exact_match),
+        _ => {
+            let prompt = format!(
+                "{} is ambiguous (found {} matches); did you mean:",
+                name.dimmed(),
+                candidates.len()
+            );
+
+            clear_terminal();
+
+            let options = candidates
+                .iter()
+                .map(|info| format_symbol_name(&info.name))
+                .collect_vec();
+
+            let selection = inquire::Select::new(&prompt, options)
+                .with_starting_cursor(0)
+                .with_page_size(crossterm::terminal::size()?.1 as usize / 2)
+                .raw_prompt()?
+                .index;
+
+            Ok(candidates[selection])
+        }
+    }
 }

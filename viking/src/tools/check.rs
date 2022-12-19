@@ -330,8 +330,7 @@ fn check_single(
     version: &Option<&str>,
     fn_to_check: &str,
 ) -> Result<()> {
-    let function = functions::find_function_fuzzy(functions, fn_to_check)
-        .with_context(|| format!("unknown function: {}", ui::format_symbol_name(fn_to_check)))?;
+    let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
     let mut name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());

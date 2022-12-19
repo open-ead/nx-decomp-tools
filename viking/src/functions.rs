@@ -223,17 +223,25 @@ pub fn demangle_str(name: &str) -> Result<String> {
     Ok(symbol.demangle(&options)?)
 }
 
-pub fn find_function_fuzzy<'a>(functions: &'a [Info], name: &str) -> Option<&'a Info> {
-    functions
+pub fn fuzzy_search<'a>(functions: &'a [Info], name: &str) -> Vec<&'a Info> {
+    let exact_match = functions
         .par_iter()
-        .find_first(|function| function.name == name)
-        .or_else(|| {
-            // Comparing the demangled names is more expensive than a simple string comparison,
-            // so only do this as a last resort.
-            functions.par_iter().find_first(|function| {
-                demangle_str(&function.name)
-                    .unwrap_or_else(|_| "".to_string())
-                    .contains(name)
-            })
+        .find_first(|function| function.name == name);
+
+    if let Some(exact_match) = exact_match {
+        return vec![exact_match];
+    }
+
+    // Find all functions whose demangled name contains the specified string.
+    // This is more expensive than a simple string comparison, so only do this after
+    // we have failed to find an exact match.
+    let mut candidates: Vec<&Info> = functions
+        .par_iter()
+        .filter(|function| {
+            demangle_str(&function.name).map_or(false, |demangled| demangled.contains(name))
         })
+        .collect();
+
+    candidates.sort_by_key(|info| info.addr);
+    candidates
 }

@@ -350,8 +350,7 @@ fn main() -> Result<()> {
 
     let functions = functions::get_functions(&args.version.as_deref())?;
 
-    let function_info = functions::find_function_fuzzy(&functions, &args.function_name)
-        .context("unknown function")?;
+    let function_info = ui::fuzzy_search_function_interactively(&functions, &args.function_name)?;
 
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
