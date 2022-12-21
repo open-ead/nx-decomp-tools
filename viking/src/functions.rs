@@ -239,6 +239,7 @@ pub fn fuzzy_search<'a>(functions: &'a [Info], name: &str) -> Vec<&'a Info> {
         .par_iter()
         .filter(|function| {
             demangle_str(&function.name).map_or(false, |demangled| demangled.contains(name))
+                || function.name.contains(name)
         })
         .collect();
 
