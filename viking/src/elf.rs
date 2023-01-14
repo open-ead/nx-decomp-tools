@@ -16,7 +16,7 @@ use rustc_hash::FxHashMap;
 
 use crate::repo;
 
-pub type OwnedElf = OwningHandle<Box<(Box<File>, Mmap)>, Box<Elf<'static>>>;
+pub type OwnedElf = OwningHandle<Box<(File, Mmap)>, Box<Elf<'static>>>;
 pub type SymbolTableByName<'a> = HashMap<&'a str, goblin::elf::Sym>;
 pub type SymbolTableByAddr = FxHashMap<u64, goblin::elf::Sym>;
 pub type AddrToNameMap<'a> = FxHashMap<u64, &'a str>;
@@ -95,7 +95,7 @@ fn parse_elf_faster(bytes: &[u8]) -> Result<Elf> {
 }
 
 pub fn load_elf(path: &Path) -> Result<OwnedElf> {
-    let file = Box::new(File::open(path)?);
+    let file = File::open(path)?;
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
     OwningHandle::try_new(Box::new((file, mmap)), |pair| unsafe {
