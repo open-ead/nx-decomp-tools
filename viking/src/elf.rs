@@ -73,7 +73,7 @@ fn parse_elf_faster(bytes: &[u8]) -> Result<Elf> {
     elf.shdr_strtab = get_strtab(&elf.section_headers, strtab_idx)?;
 
     for shdr in &elf.section_headers {
-        if shdr.sh_type as u32 == section_header::SHT_SYMTAB {
+        if shdr.sh_type == section_header::SHT_SYMTAB {
             let size = shdr.sh_entsize;
             let count = if size == 0 { 0 } else { shdr.sh_size / size };
             elf.syms = Symtab::parse(bytes, shdr.sh_offset as usize, count as usize, ctx)?;
@@ -86,7 +86,7 @@ fn parse_elf_faster(bytes: &[u8]) -> Result<Elf> {
         // parse the dynamic relocations
         elf.dynrelas = RelocSection::parse(bytes, dyn_info.rela, dyn_info.relasz, true, ctx)?;
         elf.dynrels = RelocSection::parse(bytes, dyn_info.rel, dyn_info.relsz, false, ctx)?;
-        let is_rela = dyn_info.pltrel as u64 == dynamic::DT_RELA;
+        let is_rela = dyn_info.pltrel == dynamic::DT_RELA;
         elf.pltrelocs =
             RelocSection::parse(bytes, dyn_info.jmprel, dyn_info.pltrelsz, is_rela, ctx)?;
     }
@@ -124,7 +124,7 @@ impl<'elf> SymbolStringTable<'elf> {
     pub fn from_elf(elf: &'elf OwnedElf) -> Result<Self> {
         let bytes = &*elf.as_owner().1;
         for shdr in &elf.section_headers {
-            if shdr.sh_type as u32 == section_header::SHT_SYMTAB {
+            if shdr.sh_type == section_header::SHT_SYMTAB {
                 let table_hdr = elf
                     .section_headers
                     .get(shdr.sh_link as usize)

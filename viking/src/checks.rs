@@ -74,7 +74,7 @@ impl KnownDataSymbolMap {
 
             let mid_symbol = &self.symbols[m as usize];
             let mid_addr_begin = mid_symbol.addr;
-            let mid_addr_end = mid_addr_begin + mid_symbol.size as u64;
+            let mid_addr_end = mid_addr_begin + mid_symbol.size;
 
             if mid_addr_begin <= addr && addr < mid_addr_end {
                 return Some(mid_symbol);
