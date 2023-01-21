@@ -10,7 +10,7 @@ use lexopt::prelude::*;
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic;
 use std::sync::Mutex;
 use viking::checks::FunctionChecker;
 use viking::checks::Mismatch;
@@ -28,7 +28,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 enum CheckResult {
     // If a function does not match, but is marked as such, return this error to show an appropriate exit message.
     MismatchError,
-    // If a function does match, but is marked as mismatching, return this warning to indicate this and update it if invoked with `--update-matching`.
+    // If a function does match, but is marked as mismatching, return this warning to indicate this and fix its status.
     MatchWarn,
     // Check result matches the expected value listed in the function table.
     Ok,
@@ -136,41 +136,54 @@ thread_local! {
     static CAPSTONE: RefCell<cs::Capstone> = RefCell::new(make_cs().unwrap());
 }
 
+fn update_matching_functions(
+    functions: &[functions::Info],
+    matching_functions: &HashSet<u64>,
+    version: &Option<&str>,
+) -> Result<()> {
+    if matching_functions.is_empty() {
+        return Ok(());
+    }
+
+    let mut new_functions = functions.to_vec();
+
+    new_functions
+        .par_iter_mut()
+        .filter(|info| matching_functions.contains(&info.addr))
+        .for_each(|info| info.status = functions::Status::Matching);
+
+    functions::write_functions(&new_functions, version)
+}
+
 fn check_all(
     checker: &FunctionChecker,
     functions: &[functions::Info],
-    update_matching: bool,
     version: &Option<&str>,
 ) -> Result<()> {
-    let failed = AtomicBool::new(false);
+    let failed = atomic::AtomicBool::new(false);
     let matching_functions: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
 
     functions.par_iter().try_for_each(|function| {
         CAPSTONE.with(|cs| -> Result<()> {
             let mut cs = cs.borrow_mut();
             let ok = check_function(checker, &mut cs, function)?;
-            if matches!(ok, CheckResult::MismatchError) {
-                failed.store(true, std::sync::atomic::Ordering::Relaxed);
-            } else if update_matching && matches!(ok, CheckResult::MatchWarn) {
-                matching_functions.lock().unwrap().insert(function.addr);
+            match ok {
+                CheckResult::MismatchError => {
+                    failed.store(true, atomic::Ordering::Relaxed);
+                }
+                CheckResult::MatchWarn => {
+                    matching_functions.lock().unwrap().insert(function.addr);
+                }
+                CheckResult::Ok => {}
             }
-
             Ok(())
         })
     })?;
 
-    if update_matching {
-        let functions_to_update = matching_functions.lock().unwrap();
-        let mut new_functions = functions.iter().cloned().collect_vec();
-        new_functions
-            .iter_mut()
-            .filter(|info| functions_to_update.contains(&info.addr))
-            .for_each(|info| info.status = functions::Status::Matching);
+    update_matching_functions(functions, &matching_functions.lock().unwrap(), version)
+        .with_context(|| "failed to update matching functions")?;
 
-        functions::write_functions(&new_functions, version)?;
-    }
-
-    if failed.load(std::sync::atomic::Ordering::Relaxed) {
+    if failed.load(atomic::Ordering::Relaxed) {
         bail!("found at least one error");
     } else {
         eprintln!("{}", "OK".green().bold());
@@ -423,7 +436,6 @@ struct Args {
     function: Option<String>,
     version: Option<String>,
     always_diff: bool,
-    update_matching: bool,
     print_help: bool,
     other_args: Vec<String>,
 }
@@ -432,7 +444,6 @@ fn parse_args() -> Result<Args, lexopt::Error> {
     let mut function = None;
     let mut version = repo::get_config().default_version.clone();
     let mut always_diff = false;
-    let mut update_matching = false;
     let mut print_help = false;
     let mut other_args: Vec<String> = Vec::new();
 
@@ -441,9 +452,6 @@ fn parse_args() -> Result<Args, lexopt::Error> {
         match arg {
             Long("version") => {
                 version = Some(parser.value()?.into_string()?);
-            }
-            Long("update-matching") => {
-                update_matching = true;
             }
             Long("always-diff") => {
                 always_diff = true;
@@ -478,7 +486,6 @@ fn parse_args() -> Result<Args, lexopt::Error> {
         function,
         version,
         always_diff,
-        update_matching,
         print_help,
         other_args,
     })
@@ -486,7 +493,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
 
 fn print_help() -> Result<()> {
     println!(
-"Usage: check [function name] [--version VERSION] [--update-matching] [--always-diff] [asm-differ arguments]
+"Usage: check [function name] [--version VERSION] [--always-diff] [asm-differ arguments]
 
 Checks if the compiled bytecode of a function matches the assembly found within the game elf. If not, show the differences between them.
 If no function name is provided, all functions within the repository function list will be checked.
@@ -495,7 +502,6 @@ optional arguments:
 
  -h, --help             Show this help message and exit
  --version VERSION      Check the function against version VERSION of the game elf
- --update-matching      If a function does match, but is not marked as matching, mark it as matching in the function list
  --always-diff          Show an assembly diff, even if the function matches
 All further arguments are forwarded onto asm-differ.
 
@@ -598,7 +604,7 @@ fn main() -> Result<()> {
         )?;
     } else {
         // Normal check mode.
-        check_all(&checker, &functions, args.update_matching, &version)?;
+        check_all(&checker, &functions, &version)?;
     }
 
     Ok(())
