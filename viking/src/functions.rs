@@ -86,6 +86,30 @@ fn parse_function_csv_entry(record: &csv::StringRecord) -> Result<Info> {
     })
 }
 
+fn check_for_duplicate_names(functions: &[Info], num_names: usize) -> Result<()> {
+    let mut known_names = HashSet::with_capacity(num_names);
+    let mut duplicates = Vec::new();
+
+    for entry in functions {
+        if entry.is_decompiled() && entry.name.is_empty() {
+            bail!(
+                "function at {:016x} is marked as O/M/m but has an empty name",
+                entry.addr | ADDRESS_BASE
+            );
+        }
+
+        if !entry.name.is_empty() && !known_names.insert(&entry.name) {
+            duplicates.push(&entry.name);
+        }
+    }
+
+    if !duplicates.is_empty() {
+        bail!("found duplicates: {:#?}", duplicates);
+    }
+
+    Ok(())
+}
+
 /// Returns a Vec of all functions that are listed in the specified CSV.
 pub fn get_functions_for_path(csv_path: &Path) -> Result<Vec<Info>> {
     let mut reader = csv::ReaderBuilder::new()
@@ -119,24 +143,7 @@ pub fn get_functions_for_path(csv_path: &Path) -> Result<Vec<Info>> {
         line_number += 1;
     }
 
-    // Check for duplicate names in the CSV.
-    let mut known_names = HashSet::with_capacity(num_names);
-    let mut duplicates = Vec::new();
-    for entry in &result {
-        if entry.is_decompiled() && entry.name.is_empty() {
-            bail!(
-                "function at {:016x} is marked as O/M/m but has an empty name",
-                entry.addr | ADDRESS_BASE
-            );
-        }
-
-        if !entry.name.is_empty() && !known_names.insert(&entry.name) {
-            duplicates.push(&entry.name);
-        }
-    }
-    if !duplicates.is_empty() {
-        bail!("found duplicates: {:#?}", duplicates);
-    }
+    check_for_duplicate_names(&result, num_names)?;
 
     Ok(result)
 }
