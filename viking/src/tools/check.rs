@@ -35,6 +35,12 @@ struct Args {
     other_args: Vec<String>,
 }
 
+impl Args {
+    fn get_version(&self) -> Option<&str> {
+        self.version.as_deref()
+    }
+}
+
 fn main() -> Result<()> {
     ui::init_prompt_settings();
 
@@ -45,7 +51,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let version = args.version.as_deref();
+    let version = args.get_version();
 
     let orig_elf = elf::load_orig_elf(version).context("failed to load original ELF")?;
     let decomp_elf = elf::load_decomp_elf(version).context("failed to load decomp ELF")?;
@@ -82,17 +88,8 @@ fn main() -> Result<()> {
     .context("failed to construct FunctionChecker")?;
 
     if let Some(func) = &args.function {
-        // Single function mode.
-        check_single(
-            &checker,
-            &functions,
-            func,
-            &args.other_args,
-            args.always_diff,
-            version,
-        )?;
+        check_single(&checker, &functions, func, &args)?;
     } else {
-        // Normal check mode.
         check_all(&checker, &functions, &args)?;
     }
 
@@ -304,10 +301,9 @@ fn check_single(
     checker: &FunctionChecker,
     functions: &[functions::Info],
     fn_to_check: &str,
-    args: &[String],
-    always_diff: bool,
-    version: Option<&str>,
+    args: &Args,
 ) -> Result<()> {
+    let version = args.get_version();
     let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
     let name = function.name.as_str();
 
@@ -339,7 +335,7 @@ fn check_single(
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
         .with_context(|| format!("checking {}", name))?;
 
-    let mut should_show_diff = always_diff;
+    let mut should_show_diff = args.always_diff;
 
     if let Some(mismatch) = &maybe_mismatch {
         eprintln!("{}\n{}", "mismatch".red().bold(), &mismatch);
@@ -349,7 +345,7 @@ fn check_single(
     }
 
     if should_show_diff {
-        show_asm_differ(function, name, args, version)?;
+        show_asm_differ(function, name, &args.other_args, version)?;
 
         maybe_mismatch =
             rediff_function_after_differ(functions, &orig_fn, name, &maybe_mismatch, version)
