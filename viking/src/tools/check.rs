@@ -447,6 +447,7 @@ fn check_single(
     Ok(())
 }
 
+#[derive(Default)]
 struct Args {
     function: Option<String>,
     version: Option<String>,
@@ -456,54 +457,47 @@ struct Args {
 }
 
 fn parse_args() -> Result<Args, lexopt::Error> {
-    let mut function = None;
-    let mut version = repo::get_config().default_version.clone();
-    let mut always_diff = false;
-    let mut print_help = false;
-    let mut other_args: Vec<String> = Vec::new();
+    let mut args = Args {
+        version: repo::get_config().default_version.clone(),
+        ..Default::default()
+    };
 
     let mut parser = lexopt::Parser::from_env();
     while let Some(arg) = parser.next()? {
         match arg {
             Long("version") => {
-                version = Some(parser.value()?.into_string()?);
+                args.version = Some(parser.value()?.into_string()?);
             }
             Long("always-diff") => {
-                always_diff = true;
+                args.always_diff = true;
             }
 
             Long("help") | Short('h') => {
-                print_help = true;
+                args.print_help = true;
             }
 
-            Value(other_val) if function.is_none() => {
-                function = Some(other_val.into_string()?);
+            Value(other_val) if args.function.is_none() => {
+                args.function = Some(other_val.into_string()?);
             }
-            Value(other_val) if function.is_some() => {
-                other_args.push(other_val.into_string()?);
+            Value(other_val) if args.function.is_some() => {
+                args.other_args.push(other_val.into_string()?);
             }
             Long(other_long) => {
-                other_args.push(format!("--{}", other_long));
+                args.other_args.push(format!("--{}", other_long));
                 let opt = parser.optional_value();
                 if let Some(o) = opt {
-                    other_args.push(o.into_string()?);
+                    args.other_args.push(o.into_string()?);
                 }
             }
             Short(other_short) => {
-                other_args.push(format!("-{}", other_short));
+                args.other_args.push(format!("-{}", other_short));
             }
 
             _ => return Err(arg.unexpected()),
         }
     }
 
-    Ok(Args {
-        function,
-        version,
-        always_diff,
-        print_help,
-        other_args,
-    })
+    Ok(args)
 }
 
 fn print_help() -> Result<()> {
