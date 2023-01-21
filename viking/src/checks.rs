@@ -167,8 +167,8 @@ impl std::fmt::Display for Mismatch {
 }
 
 pub struct FunctionChecker<'a, 'functions, 'orig_elf, 'decomp_elf> {
-    decomp_elf: &'decomp_elf elf::OwnedElf,
-    decomp_symtab: &'a elf::SymbolTableByName<'decomp_elf>,
+    pub decomp_elf: &'decomp_elf elf::OwnedElf,
+    pub decomp_symtab: &'a elf::SymbolTableByName<'decomp_elf>,
     decomp_glob_data_table: elf::GlobDataTable,
 
     // Optional, only initialized when a mismatch is detected.
@@ -177,7 +177,7 @@ pub struct FunctionChecker<'a, 'functions, 'orig_elf, 'decomp_elf> {
     known_data_symbols: KnownDataSymbolMap,
     known_functions: FxHashMap<u64, &'functions functions::Info>,
 
-    orig_elf: &'orig_elf elf::OwnedElf,
+    pub orig_elf: &'orig_elf elf::OwnedElf,
     orig_got_section: &'orig_elf goblin::elf::SectionHeader,
 }
 

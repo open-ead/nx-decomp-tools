@@ -37,13 +37,10 @@ enum CheckResult {
 fn check_function(
     checker: &FunctionChecker,
     cs: &mut capstone::Capstone,
-    orig_elf: &elf::OwnedElf,
-    decomp_elf: &elf::OwnedElf,
-    decomp_symtab: &elf::SymbolTableByName,
     function: &functions::Info,
 ) -> Result<CheckResult> {
     let name = function.name.as_str();
-    let decomp_fn = elf::get_function_by_name(decomp_elf, decomp_symtab, name);
+    let decomp_fn = elf::get_function_by_name(checker.decomp_elf, checker.decomp_symtab, name);
 
     match function.status {
         Status::NotDecompiled if decomp_fn.is_err() => return Ok(CheckResult::Ok),
@@ -64,13 +61,15 @@ fn check_function(
     let decomp_fn = decomp_fn.unwrap();
 
     let get_orig_fn = || {
-        elf::get_function(orig_elf, function.addr, function.size as u64).with_context(|| {
-            format!(
-                "failed to get function {} ({}) from the original executable",
-                name,
-                ui::format_address(function.addr),
-            )
-        })
+        elf::get_function(checker.orig_elf, function.addr, function.size as u64).with_context(
+            || {
+                format!(
+                    "failed to get function {} ({}) from the original executable",
+                    name,
+                    ui::format_address(function.addr),
+                )
+            },
+        )
     };
 
     match function.status {
@@ -138,11 +137,8 @@ thread_local! {
 }
 
 fn check_all(
-    functions: &[functions::Info],
     checker: &FunctionChecker,
-    orig_elf: &elf::OwnedElf,
-    decomp_elf: &elf::OwnedElf,
-    decomp_symtab: &elf::SymbolTableByName,
+    functions: &[functions::Info],
     update_matching: bool,
     version: &Option<&str>,
 ) -> Result<()> {
@@ -152,14 +148,7 @@ fn check_all(
     functions.par_iter().try_for_each(|function| {
         CAPSTONE.with(|cs| -> Result<()> {
             let mut cs = cs.borrow_mut();
-            let ok = check_function(
-                checker,
-                &mut cs,
-                orig_elf,
-                decomp_elf,
-                decomp_symtab,
-                function,
-            )?;
+            let ok = check_function(checker, &mut cs, function)?;
             if matches!(ok, CheckResult::MismatchError) {
                 failed.store(true, std::sync::atomic::Ordering::Relaxed);
             } else if update_matching && matches!(ok, CheckResult::MatchWarn) {
@@ -320,15 +309,12 @@ fn rediff_function_after_differ(
 }
 
 fn check_single(
-    functions: &[functions::Info],
     checker: &FunctionChecker,
-    orig_elf: &elf::OwnedElf,
-    decomp_elf: &elf::OwnedElf,
-    decomp_symtab: &elf::SymbolTableByName,
+    functions: &[functions::Info],
+    fn_to_check: &str,
     args: &[String],
     always_diff: bool,
     version: &Option<&str>,
-    fn_to_check: &str,
 ) -> Result<()> {
     let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
     let mut name = function.name.as_str();
@@ -341,8 +327,8 @@ fn check_single(
 
     let resolved_name;
     let name_was_ambiguous;
-    if !decomp_symtab.contains_key(name) {
-        resolved_name = resolve_unknown_fn_interactively(name, decomp_symtab, functions)?;
+    if !checker.decomp_symtab.contains_key(name) {
+        resolved_name = resolve_unknown_fn_interactively(name, checker.decomp_symtab, functions)?;
         name = &resolved_name;
         name_was_ambiguous = true;
     } else {
@@ -350,15 +336,15 @@ fn check_single(
     }
     let name = name;
 
-    let decomp_fn =
-        elf::get_function_by_name(decomp_elf, decomp_symtab, name).with_context(|| {
+    let decomp_fn = elf::get_function_by_name(checker.decomp_elf, checker.decomp_symtab, name)
+        .with_context(|| {
             format!(
                 "failed to get decomp function: {}",
                 ui::format_symbol_name(name)
             )
         })?;
 
-    let orig_fn = elf::get_function(orig_elf, function.addr, function.size as u64)?;
+    let orig_fn = elf::get_function(checker.orig_elf, function.addr, function.size as u64)?;
 
     let mut maybe_mismatch = checker
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
@@ -603,27 +589,16 @@ fn main() -> Result<()> {
     if let Some(func) = &args.function {
         // Single function mode.
         check_single(
-            &functions,
             &checker,
-            &orig_elf,
-            &decomp_elf,
-            &decomp_symtab,
+            &functions,
+            func,
             &args.other_args,
             args.always_diff,
             &version,
-            func,
         )?;
     } else {
         // Normal check mode.
-        check_all(
-            &functions,
-            &checker,
-            &orig_elf,
-            &decomp_elf,
-            &decomp_symtab,
-            args.update_matching,
-            &version,
-        )?;
+        check_all(&checker, &functions, args.update_matching, &version)?;
     }
 
     Ok(())
