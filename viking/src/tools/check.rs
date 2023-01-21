@@ -320,6 +320,51 @@ fn rediff_function_after_differ(
     Ok(maybe_mismatch)
 }
 
+fn show_asm_differ(
+    function: &functions::Info,
+    name: &str,
+    args: &[String],
+    version: &Option<&str>,
+) -> Result<()> {
+    let mut diff_args: Vec<String> = args.to_owned();
+    let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
+    if version.is_some() {
+        diff_args.push("--version".to_owned());
+        diff_args.push(version.unwrap().to_owned());
+    }
+
+    std::process::Command::new(&differ_path)
+        .current_dir(repo::get_tools_path()?)
+        .arg("-I")
+        .arg("-e")
+        .arg(name)
+        .arg(format!("0x{:016x}", function.addr))
+        .arg(format!("0x{:016x}", function.addr + function.size as u64))
+        .args(diff_args)
+        .status()
+        .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
+
+    Ok(())
+}
+
+fn update_function_in_function_list<UpdateFn>(
+    functions: &[functions::Info],
+    addr: u64,
+    version: &Option<&str>,
+    update_fn: UpdateFn,
+) -> Result<()>
+where
+    UpdateFn: FnOnce(&mut functions::Info),
+{
+    let mut new_functions = functions.to_vec();
+    let entry = new_functions
+        .iter_mut()
+        .find(|info| info.addr == addr)
+        .unwrap();
+    update_fn(entry);
+    functions::write_functions(&new_functions, version)
+}
+
 fn check_single(
     checker: &FunctionChecker,
     functions: &[functions::Info],
@@ -329,7 +374,7 @@ fn check_single(
     version: &Option<&str>,
 ) -> Result<()> {
     let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
-    let mut name = function.name.as_str();
+    let name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());
 
@@ -338,15 +383,12 @@ fn check_single(
     }
 
     let resolved_name;
-    let name_was_ambiguous;
-    if !checker.decomp_symtab.contains_key(name) {
-        resolved_name = resolve_unknown_fn_interactively(name, checker.decomp_symtab, functions)?;
-        name = &resolved_name;
-        name_was_ambiguous = true;
+    let name = if checker.decomp_symtab.contains_key(name) {
+        name
     } else {
-        name_was_ambiguous = false;
-    }
-    let name = name;
+        resolved_name = resolve_unknown_fn_interactively(name, checker.decomp_symtab, functions)?;
+        &resolved_name
+    };
 
     let decomp_fn = elf::get_function_by_name(checker.decomp_elf, checker.decomp_symtab, name)
         .with_context(|| {
@@ -372,25 +414,7 @@ fn check_single(
     }
 
     if should_show_diff {
-        let mut diff_args: Vec<String> = args.to_owned();
-
-        let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
-
-        if version.is_some() {
-            diff_args.push("--version".to_owned());
-            diff_args.push(version.unwrap().to_owned());
-        }
-
-        std::process::Command::new(&differ_path)
-            .current_dir(repo::get_tools_path()?)
-            .arg("-I")
-            .arg("-e")
-            .arg(name)
-            .arg(format!("0x{:016x}", function.addr))
-            .arg(format!("0x{:016x}", function.addr + function.size as u64))
-            .args(diff_args)
-            .status()
-            .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
+        show_asm_differ(function, name, args, version)?;
 
         maybe_mismatch =
             rediff_function_after_differ(functions, &orig_fn, name, &maybe_mismatch, version)
@@ -399,17 +423,13 @@ fn check_single(
 
     let new_status = match maybe_mismatch {
         None => Status::Matching,
-        Some(_) => {
-            if function.status == Status::NotDecompiled {
-                Status::Wip
-            } else {
-                function.status.clone()
-            }
-        }
+        _ if function.status == Status::NotDecompiled => Status::Wip,
+        _ => function.status.clone(),
     };
 
     // Update the function entry if needed.
     let status_changed = function.status != new_status;
+    let name_was_ambiguous = function.name != name;
     if status_changed || name_was_ambiguous {
         if status_changed {
             ui::print_note(&format!(
@@ -418,14 +438,10 @@ fn check_single(
             ));
         }
 
-        let mut new_functions = functions.iter().cloned().collect_vec();
-        let new_entry = new_functions
-            .iter_mut()
-            .find(|info| info.addr == function.addr)
-            .unwrap();
-        new_entry.status = new_status;
-        new_entry.name = name.to_string();
-        functions::write_functions(&new_functions, version)?;
+        update_function_in_function_list(functions, function.addr, version, |entry| {
+            entry.status = new_status.clone();
+            entry.name = name.to_string();
+        })?;
     }
 
     Ok(())
