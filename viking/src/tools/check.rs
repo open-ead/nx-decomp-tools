@@ -546,25 +546,25 @@ fn resolve_unknown_fn_interactively(
 fn show_asm_differ(
     function: &functions::Info,
     name: &str,
-    args: &[String],
+    differ_args: &[String],
     version: Option<&str>,
 ) -> Result<()> {
-    let mut diff_args: Vec<String> = args.to_owned();
     let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
-    if let Some(version) = version {
-        diff_args.push("--version".to_owned());
-        diff_args.push(version.to_owned());
-    }
+    let mut cmd = std::process::Command::new(&differ_path);
 
-    std::process::Command::new(&differ_path)
-        .current_dir(repo::get_tools_path()?)
+    cmd.current_dir(repo::get_tools_path()?)
         .arg("-I")
         .arg("-e")
         .arg(name)
         .arg(format!("0x{:016x}", function.addr))
         .arg(format!("0x{:016x}", function.addr + function.size as u64))
-        .args(diff_args)
-        .status()
+        .args(differ_args);
+
+    if let Some(version) = version {
+        cmd.args(["--version", version]);
+    }
+
+    cmd.status()
         .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
 
     Ok(())
