@@ -1,11 +1,11 @@
 use anyhow::{ensure, Result};
 use capstone as cs;
 use cs::arch::arm64::{Arm64Insn, Arm64Operand, Arm64OperandType};
-use itertools::zip;
 use lazy_init::Lazy;
 use rustc_hash::FxHashMap;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::iter::zip;
 use std::path::{Path, PathBuf};
 
 use crate::{capstone_utils::*, elf, functions, repo, ui};
