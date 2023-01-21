@@ -30,6 +30,7 @@ struct Args {
     function: Option<String>,
     version: Option<String>,
     always_diff: bool,
+    warnings_as_errors: bool,
     print_help: bool,
     other_args: Vec<String>,
 }
@@ -92,7 +93,7 @@ fn main() -> Result<()> {
         )?;
     } else {
         // Normal check mode.
-        check_all(&checker, &functions, &version)?;
+        check_all(&checker, &functions, &args)?;
     }
 
     Ok(())
@@ -112,6 +113,9 @@ fn parse_args() -> Result<Args, lexopt::Error> {
             }
             Long("always-diff") => {
                 args.always_diff = true;
+            }
+            Long("warnings-as-errors") => {
+                args.warnings_as_errors = true;
             }
 
             Long("help") | Short('h') => {
@@ -210,6 +214,7 @@ fn check_function(
     checker: &FunctionChecker,
     cs: &mut capstone::Capstone,
     function: &functions::Info,
+    args: &Args,
 ) -> Result<CheckResult> {
     let name = function.name.as_str();
     let decomp_fn = elf::get_function_by_name(checker.decomp_elf, checker.decomp_symtab, name);
@@ -220,13 +225,15 @@ fn check_function(
         _ => (),
     }
 
-    if decomp_fn.is_err() {
-        let error = decomp_fn.err().unwrap();
+    if let Err(error) = decomp_fn {
         ui::print_warning(&format!(
             "couldn't check {}: {}",
             ui::format_symbol_name(name),
             error.to_string().dimmed(),
         ));
+        if args.warnings_as_errors {
+            return Err(error);
+        }
         return Ok(CheckResult::Ok);
     }
 
@@ -375,18 +382,14 @@ fn check_single(
     Ok(())
 }
 
-fn check_all(
-    checker: &FunctionChecker,
-    functions: &[functions::Info],
-    version: &Option<&str>,
-) -> Result<()> {
+fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Args) -> Result<()> {
     let failed = atomic::AtomicBool::new(false);
     let matching_functions: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
 
-    functions.par_iter().try_for_each(|function| {
-        CAPSTONE.with(|cs| -> Result<()> {
+    functions.par_iter().for_each(|function| {
+        let result = CAPSTONE.with(|cs| -> Result<()> {
             let mut cs = cs.borrow_mut();
-            let ok = check_function(checker, &mut cs, function)?;
+            let ok = check_function(checker, &mut cs, function, args)?;
             match ok {
                 CheckResult::MismatchError => {
                     failed.store(true, atomic::Ordering::Relaxed);
@@ -397,11 +400,19 @@ fn check_all(
                 CheckResult::Ok => {}
             }
             Ok(())
-        })
-    })?;
+        });
 
-    update_matching_functions(functions, &matching_functions.lock().unwrap(), version)
-        .with_context(|| "failed to update matching functions")?;
+        if result.is_err() {
+            failed.store(true, atomic::Ordering::Relaxed);
+        }
+    });
+
+    update_matching_functions(
+        functions,
+        &matching_functions.lock().unwrap(),
+        &args.version.as_deref(),
+    )
+    .with_context(|| "failed to update matching functions")?;
 
     if failed.load(atomic::Ordering::Relaxed) {
         bail!("found at least one error");
