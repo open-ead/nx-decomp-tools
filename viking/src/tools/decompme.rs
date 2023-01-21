@@ -40,7 +40,7 @@ fn load_compilation_database(args: &Args) -> Result<json_compilation_db::Entries
     if let Some(p) = args.compilation_database.as_ref() {
         path = PathBuf::from(p.to_string());
     } else {
-        path = repo::get_build_path(&args.version.as_deref())?;
+        path = repo::get_build_path(args.version.as_deref())?;
     }
 
     if path.is_dir() {
@@ -348,15 +348,15 @@ fn main() -> Result<()> {
         .as_ref()
         .context("decomp.me integration needs to be configured")?;
 
-    let functions = functions::get_functions(&args.version.as_deref())?;
+    let functions = functions::get_functions(args.version.as_deref())?;
 
     let function_info = ui::fuzzy_search_function_interactively(&functions, &args.function_name)?;
 
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
     let version = args.version.as_deref();
-    let decomp_elf = elf::load_decomp_elf(&version)?;
-    let orig_elf = elf::load_orig_elf(&version)?;
+    let decomp_elf = elf::load_decomp_elf(version)?;
+    let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
 

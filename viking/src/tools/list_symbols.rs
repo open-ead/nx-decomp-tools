@@ -37,10 +37,10 @@ fn main() -> Result<()> {
 
     let args: Args = argh::from_env();
 
-    let functions = functions::get_functions(&args.version.as_deref())?;
+    let functions = functions::get_functions(args.version.as_deref())?;
     let known_funcs = functions::make_known_function_name_map(&functions);
 
-    let elf = elf::load_decomp_elf(&args.version.as_deref())?;
+    let elf = elf::load_decomp_elf(args.version.as_deref())?;
     let symtab = elf::SymbolStringTable::from_elf(&elf)?;
 
     let filter = |sym: &Sym| {

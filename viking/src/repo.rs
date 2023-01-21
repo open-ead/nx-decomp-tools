@@ -55,7 +55,7 @@ pub fn get_tools_path() -> Result<PathBuf> {
     Ok(get_repo_root()?.join("tools/common"))
 }
 
-fn get_version_specific_dir_path(dir_name: &str, version: &Option<&str>) -> Result<PathBuf> {
+fn get_version_specific_dir_path(dir_name: &str, version: Option<&str>) -> Result<PathBuf> {
     let dir_name = if let Some(v) = version {
         format!("{}/{}", dir_name, v)
     } else {
@@ -65,10 +65,10 @@ fn get_version_specific_dir_path(dir_name: &str, version: &Option<&str>) -> Resu
     Ok(get_repo_root()?.join(dir_name))
 }
 
-pub fn get_data_path(version: &Option<&str>) -> Result<PathBuf> {
+pub fn get_data_path(version: Option<&str>) -> Result<PathBuf> {
     get_version_specific_dir_path("data", version)
 }
 
-pub fn get_build_path(version: &Option<&str>) -> Result<PathBuf> {
+pub fn get_build_path(version: Option<&str>) -> Result<PathBuf> {
     get_version_specific_dir_path("build", version)
 }

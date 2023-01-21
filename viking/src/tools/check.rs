@@ -47,8 +47,8 @@ fn main() -> Result<()> {
 
     let version = args.version.as_deref();
 
-    let orig_elf = elf::load_orig_elf(&version).context("failed to load original ELF")?;
-    let decomp_elf = elf::load_decomp_elf(&version).context("failed to load decomp ELF")?;
+    let orig_elf = elf::load_orig_elf(version).context("failed to load original ELF")?;
+    let decomp_elf = elf::load_decomp_elf(version).context("failed to load decomp ELF")?;
 
     // Load these in parallel.
     let mut decomp_symtab = None;
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     rayon::scope(|s| {
         s.spawn(|_| decomp_symtab = Some(elf::make_symbol_map_by_name(&decomp_elf)));
         s.spawn(|_| decomp_glob_data_table = Some(elf::build_glob_data_table(&decomp_elf)));
-        s.spawn(|_| functions = Some(functions::get_functions(&version)));
+        s.spawn(|_| functions = Some(functions::get_functions(version)));
     });
 
     let decomp_symtab = decomp_symtab
@@ -77,7 +77,7 @@ fn main() -> Result<()> {
         &decomp_symtab,
         decomp_glob_data_table,
         &functions,
-        &version,
+        version,
     )
     .context("failed to construct FunctionChecker")?;
 
@@ -89,7 +89,7 @@ fn main() -> Result<()> {
             func,
             &args.other_args,
             args.always_diff,
-            &version,
+            version,
         )?;
     } else {
         // Normal check mode.
@@ -306,7 +306,7 @@ fn check_single(
     fn_to_check: &str,
     args: &[String],
     always_diff: bool,
-    version: &Option<&str>,
+    version: Option<&str>,
 ) -> Result<()> {
     let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
     let name = function.name.as_str();
@@ -410,7 +410,7 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
     update_matching_functions(
         functions,
         &matching_functions.lock().unwrap(),
-        &args.version.as_deref(),
+        args.version.as_deref(),
     )
     .with_context(|| "failed to update matching functions")?;
 
@@ -440,7 +440,7 @@ thread_local! {
 fn update_matching_functions(
     functions: &[functions::Info],
     matching_functions: &HashSet<u64>,
-    version: &Option<&str>,
+    version: Option<&str>,
 ) -> Result<()> {
     if matching_functions.is_empty() {
         return Ok(());
@@ -459,7 +459,7 @@ fn update_matching_functions(
 fn update_function_in_function_list<UpdateFn>(
     functions: &[functions::Info],
     addr: u64,
-    version: &Option<&str>,
+    version: Option<&str>,
     update_fn: UpdateFn,
 ) -> Result<()>
 where
@@ -547,13 +547,13 @@ fn show_asm_differ(
     function: &functions::Info,
     name: &str,
     args: &[String],
-    version: &Option<&str>,
+    version: Option<&str>,
 ) -> Result<()> {
     let mut diff_args: Vec<String> = args.to_owned();
     let differ_path = repo::get_tools_path()?.join("asm-differ").join("diff.py");
-    if version.is_some() {
+    if let Some(version) = version {
         diff_args.push("--version".to_owned());
-        diff_args.push(version.unwrap().to_owned());
+        diff_args.push(version.to_owned());
     }
 
     std::process::Command::new(&differ_path)
@@ -575,7 +575,7 @@ fn rediff_function_after_differ(
     orig_fn: &elf::Function,
     name: &str,
     previous_check_result: &Option<Mismatch>,
-    version: &Option<&str>,
+    version: Option<&str>,
 ) -> Result<Option<Mismatch>> {
     // Reload the decomp ELF because it may have been modified.
     //

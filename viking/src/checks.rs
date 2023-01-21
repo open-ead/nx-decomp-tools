@@ -91,7 +91,7 @@ impl KnownDataSymbolMap {
     }
 }
 
-fn get_data_symbol_csv_path(version: &Option<&str>) -> Result<PathBuf> {
+fn get_data_symbol_csv_path(version: Option<&str>) -> Result<PathBuf> {
     Ok(repo::get_data_path(version)?.join("data_symbols.csv"))
 }
 
@@ -190,7 +190,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         decomp_symtab: &'a elf::SymbolTableByName<'decomp_elf>,
         decomp_glob_data_table: elf::GlobDataTable,
         functions: &'functions [functions::Info],
-        version: &Option<&str>,
+        version: Option<&str>,
     ) -> Result<Self> {
         let mut known_data_symbols = KnownDataSymbolMap::new();
         known_data_symbols.load(get_data_symbol_csv_path(version)?.as_path(), decomp_symtab)?;

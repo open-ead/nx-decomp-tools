@@ -104,11 +104,11 @@ pub fn load_elf(path: &Path) -> Result<OwnedElf> {
     })
 }
 
-pub fn load_orig_elf(version: &Option<&str>) -> Result<OwnedElf> {
+pub fn load_orig_elf(version: Option<&str>) -> Result<OwnedElf> {
     load_elf(repo::get_data_path(version)?.join("main.elf").as_path())
 }
 
-pub fn load_decomp_elf(version: &Option<&str>) -> Result<OwnedElf> {
+pub fn load_decomp_elf(version: Option<&str>) -> Result<OwnedElf> {
     let decomp_elf_path: PathBuf = repo::get_build_path(version)
         .expect("Failed to get build path")
         .join(&repo::get_config().build_target);

@@ -198,7 +198,7 @@ pub fn write_functions_to_path(csv_path: &Path, functions: &[Info]) -> Result<()
     Ok(())
 }
 
-pub fn get_functions_csv_path(version: &Option<&str>) -> PathBuf {
+pub fn get_functions_csv_path(version: Option<&str>) -> PathBuf {
     let mut path = repo::get_repo_root().expect("Failed to get repo root");
     let config_functions_csv = repo::get_config().functions_csv.clone();
     let functions_csv = version
@@ -210,11 +210,11 @@ pub fn get_functions_csv_path(version: &Option<&str>) -> PathBuf {
 }
 
 /// Returns a Vec of all known functions in the executable.
-pub fn get_functions(version: &Option<&str>) -> Result<Vec<Info>> {
+pub fn get_functions(version: Option<&str>) -> Result<Vec<Info>> {
     get_functions_for_path(get_functions_csv_path(version).as_path())
 }
 
-pub fn write_functions(functions: &[Info], version: &Option<&str>) -> Result<()> {
+pub fn write_functions(functions: &[Info], version: Option<&str>) -> Result<()> {
     write_functions_to_path(get_functions_csv_path(version).as_path(), functions)
 }
 
