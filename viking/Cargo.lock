@@ -174,8 +174,8 @@ checksum = "dfb24e866b15a1af2a1b663f10c6b6b8f397a84aadb828f12e5b289ec23a3a3c"
 
 [[package]]
 name = "capstone"
-version = "0.9.0"
-source = "git+https://github.com/leoetlino/capstone-rs#1f962210b1e2ff418cf6c1bcb6c6785427662a07"
+version = "0.11.0"
+source = "git+https://github.com/leoetlino/capstone-rs?rev=f5aa278e1982bca86a67ac8b8550ab1dd70f7d9d#f5aa278e1982bca86a67ac8b8550ab1dd70f7d9d"
 dependencies = [
  "capstone-sys",
  "libc",
@@ -183,8 +183,8 @@ dependencies = [
 
 [[package]]
 name = "capstone-sys"
-version = "0.13.0"
-source = "git+https://github.com/leoetlino/capstone-rs#1f962210b1e2ff418cf6c1bcb6c6785427662a07"
+version = "0.15.0"
+source = "git+https://github.com/leoetlino/capstone-rs?rev=f5aa278e1982bca86a67ac8b8550ab1dd70f7d9d#f5aa278e1982bca86a67ac8b8550ab1dd70f7d9d"
 dependencies = [
  "cc",
  "libc",

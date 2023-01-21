@@ -231,7 +231,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         impl State {
             fn forget_modified_registers(&mut self, detail: &cs::InsnDetail) {
                 for reg in detail.regs_write() {
-                    self.adrp_pair_registers.remove(&reg);
+                    self.adrp_pair_registers.remove(reg);
                 }
             }
         }

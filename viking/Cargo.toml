@@ -12,7 +12,7 @@ addr2line = "0.19.0"
 anyhow = "1.0"
 argh = "0.1.6"
 bad64 = "0.6.0"
-capstone = { git = "https://github.com/leoetlino/capstone-rs" }
+capstone = { git = "https://github.com/leoetlino/capstone-rs", rev = "f5aa278e1982bca86a67ac8b8550ab1dd70f7d9d" }
 colored = "2"
 cpp_demangle = "0.4.0"
 crossterm = "0.25.0"
