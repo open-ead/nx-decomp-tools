@@ -42,6 +42,14 @@ impl Info {
     pub fn is_decompiled(&self) -> bool {
         !matches!(self.status, Status::NotDecompiled | Status::Library)
     }
+
+    pub fn get_start(&self) -> u64 {
+        self.addr | ADDRESS_BASE
+    }
+
+    pub fn get_end(&self) -> u64 {
+        self.get_start() + self.size as u64
+    }
 }
 
 pub const CSV_HEADER: &[&str] = &["Address", "Quality", "Size", "Name"];
@@ -94,7 +102,7 @@ fn check_for_duplicate_names(functions: &[Info], num_names: usize) -> Result<()>
         if entry.is_decompiled() && entry.name.is_empty() {
             bail!(
                 "function at {:016x} is marked as O/M/m but has an empty name",
-                entry.addr | ADDRESS_BASE
+                entry.get_start()
             );
         }
 
@@ -105,6 +113,24 @@ fn check_for_duplicate_names(functions: &[Info], num_names: usize) -> Result<()>
 
     if !duplicates.is_empty() {
         bail!("found duplicates: {:#?}", duplicates);
+    }
+
+    Ok(())
+}
+
+fn check_for_overlapping_functions(functions: &[Info]) -> Result<()> {
+    for pair in functions.windows(2) {
+        let first = &pair[0];
+        let second = &pair[1];
+
+        ensure!(
+            first.get_start() < second.get_start() && first.get_end() <= second.get_start(),
+            "overlapping functions: {:016x} - {:016x} and {:016x} - {:016x}",
+            first.get_start(),
+            first.get_end(),
+            second.get_start(),
+            second.get_end(),
+        );
     }
 
     Ok(())
@@ -144,6 +170,7 @@ pub fn get_functions_for_path(csv_path: &Path) -> Result<Vec<Info>> {
     }
 
     check_for_duplicate_names(&result, num_names)?;
+    check_for_overlapping_functions(&result)?;
 
     Ok(result)
 }
@@ -153,7 +180,7 @@ pub fn write_functions_to_path(csv_path: &Path, functions: &[Info]) -> Result<()
     writer.write_record(CSV_HEADER)?;
 
     for function in functions {
-        let addr = format!("0x{:016x}", function.addr | ADDRESS_BASE);
+        let addr = format!("0x{:016x}", function.get_start());
         let status = match function.status {
             Status::Matching => "O",
             Status::NonMatchingMinor => "m",

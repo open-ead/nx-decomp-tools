@@ -366,7 +366,7 @@ fn main() -> Result<()> {
          \n\
          // move the target function from the context to the source tab",
         &function_info.name,
-        function_info.addr | functions::ADDRESS_BASE,
+        function_info.get_start(),
     );
 
     let mut flags = decomp_me_config.default_compile_flags.clone();
