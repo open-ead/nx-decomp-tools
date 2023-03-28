@@ -302,7 +302,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
                 Arm64Insn::ARM64_INS_ADD => {
                     let mut diff_ok = false;
 
-                    if ops.0.len() == 3 {
+                    if ops.0.len() == 3 && ops.1.len() == 3 {
                         let dest_reg =
                             map_pair(&ops, |ops| Arm64Operand::from(&ops[0]).op_type.reg());
                         let reg = map_pair(&ops, |ops| Arm64Operand::from(&ops[1]).op_type.reg());
