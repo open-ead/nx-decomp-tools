@@ -9,6 +9,7 @@ use itertools::Itertools;
 use lexopt::prelude::*;
 use rayon::prelude::*;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic;
 use std::sync::Mutex;
@@ -203,6 +204,8 @@ enum CheckResult {
     MismatchError,
     // If a function does match, but is marked as mismatching, return this warning to indicate this and fix its status.
     MatchWarn,
+    // If a function does not match, but is marked as "not decompiled", return this warning to indicate this and fix its status.
+    MismatchWarn,
     // Check result matches the expected value listed in the function table.
     Ok,
 }
@@ -288,6 +291,13 @@ fn check_function(
                     function.status.description(),
                 ));
                 return Ok(CheckResult::MatchWarn);
+            } else if function.status == Status::NotDecompiled {
+                ui::print_note(&format!(
+                    "function {} is marked as {} but mismatches",
+                    ui::format_symbol_name(name),
+                    function.status.description(),
+                ));
+                return Ok(CheckResult::MismatchWarn);
             }
         }
 
@@ -380,7 +390,7 @@ fn check_single(
 
 fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Args) -> Result<()> {
     let failed = atomic::AtomicBool::new(false);
-    let matching_functions: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
+    let new_function_statuses: Mutex<HashMap<u64, functions::Status>> = Mutex::new(HashMap::new());
 
     functions.par_iter().for_each(|function| {
         let result = CAPSTONE.with(|cs| -> Result<()> {
@@ -391,7 +401,16 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
                     failed.store(true, atomic::Ordering::Relaxed);
                 }
                 CheckResult::MatchWarn => {
-                    matching_functions.lock().unwrap().insert(function.addr);
+                    new_function_statuses
+                        .lock()
+                        .unwrap()
+                        .insert(function.addr, functions::Status::Matching);
+                }
+                CheckResult::MismatchWarn => {
+                    new_function_statuses
+                        .lock()
+                        .unwrap()
+                        .insert(function.addr, functions::Status::NonMatchingMajor);
                 }
                 CheckResult::Ok => {}
             }
@@ -403,12 +422,12 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
         }
     });
 
-    update_matching_functions(
+    update_function_statuses(
         functions,
-        &matching_functions.lock().unwrap(),
+        &new_function_statuses.lock().unwrap(),
         args.version.as_deref(),
     )
-    .with_context(|| "failed to update matching functions")?;
+    .with_context(|| "failed to update function statuses")?;
 
     if failed.load(atomic::Ordering::Relaxed) {
         bail!("found at least one error");
@@ -433,21 +452,22 @@ thread_local! {
     static CAPSTONE: RefCell<cs::Capstone> = RefCell::new(make_cs().unwrap());
 }
 
-fn update_matching_functions(
+fn update_function_statuses(
     functions: &[functions::Info],
-    matching_functions: &HashSet<u64>,
+    new_function_statuses: &HashMap<u64, functions::Status>,
     version: Option<&str>,
 ) -> Result<()> {
-    if matching_functions.is_empty() {
+    if new_function_statuses.is_empty() {
         return Ok(());
     }
 
     let mut new_functions = functions.to_vec();
 
-    new_functions
-        .par_iter_mut()
-        .filter(|info| matching_functions.contains(&info.addr))
-        .for_each(|info| info.status = functions::Status::Matching);
+    new_functions.par_iter_mut().for_each(|info| {
+        if let Some(status) = new_function_statuses.get(&info.addr) {
+            info.status = status.clone()
+        }
+    });
 
     functions::write_functions(&new_functions, version)
 }
