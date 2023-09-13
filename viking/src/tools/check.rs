@@ -203,6 +203,8 @@ enum CheckResult {
     MismatchError,
     // If a function does match, but is marked as mismatching, return this warning to indicate this and fix its status.
     MatchWarn,
+    // If a function does not match, but is marked as "not decompiled", return this warning to indicate this and fix its status.
+    MismatchWarn,
     // Check result matches the expected value listed in the function table.
     Ok,
 }
@@ -288,6 +290,14 @@ fn check_function(
                     function.status.description(),
                 ));
                 return Ok(CheckResult::MatchWarn);
+            }
+            else if function.status == Status::NotDecompiled {
+                ui::print_note(&format!(
+                    "function {} is marked as {} but mismatches",
+                    ui::format_symbol_name(name),
+                    function.status.description(),
+                ));
+                return Ok(CheckResult::MismatchWarn);
             }
         }
 
@@ -381,6 +391,7 @@ fn check_single(
 fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Args) -> Result<()> {
     let failed = atomic::AtomicBool::new(false);
     let matching_functions: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
+    let mismatching_functions: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
 
     functions.par_iter().for_each(|function| {
         let result = CAPSTONE.with(|cs| -> Result<()> {
@@ -392,6 +403,9 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
                 }
                 CheckResult::MatchWarn => {
                     matching_functions.lock().unwrap().insert(function.addr);
+                }
+                CheckResult::MismatchWarn => {
+                    mismatching_functions.lock().unwrap().insert(function.addr);
                 }
                 CheckResult::Ok => {}
             }
@@ -409,6 +423,13 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
         args.version.as_deref(),
     )
     .with_context(|| "failed to update matching functions")?;
+
+    update_mismatching_functions(
+        functions,
+        &mismatching_functions.lock().unwrap(),
+        args.version.as_deref(),
+    )
+    .with_context(|| "failed to update mismatching functions")?;
 
     if failed.load(atomic::Ordering::Relaxed) {
         bail!("found at least one error");
@@ -448,6 +469,25 @@ fn update_matching_functions(
         .par_iter_mut()
         .filter(|info| matching_functions.contains(&info.addr))
         .for_each(|info| info.status = functions::Status::Matching);
+
+    functions::write_functions(&new_functions, version)
+}
+
+fn update_mismatching_functions(
+    functions: &[functions::Info],
+    mismatching_functions: &HashSet<u64>,
+    version: Option<&str>,
+) -> Result<()> {
+    if mismatching_functions.is_empty() {
+        return Ok(());
+    }
+
+    let mut new_functions = functions.to_vec();
+
+    new_functions
+        .par_iter_mut()
+        .filter(|info| mismatching_functions.contains(&info.addr))
+        .for_each(|info| info.status = functions::Status::NonMatchingMajor);
 
     functions::write_functions(&new_functions, version)
 }
