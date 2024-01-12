@@ -107,6 +107,28 @@ def set_up_compiler(version):
                 "dir_name": "clang+llvm-4.0.1-x86_64-apple-macosx10.9.0",
             },
         }
+    elif version == "5.0.1":
+        builds = {
+            # Linux
+            ("Linux", "x86_64"): {
+                "url": "https://releases.llvm.org/5.0.1/clang+llvm-5.0.1-x86_64-linux-gnu-Fedora27.tar.xz",
+                "dir_name": "clang+llvm-5.0.1-x86_64-linux-gnu-Fedora27",
+            },
+            ("Linux", "aarch64"): {
+                "url": "https://releases.llvm.org/5.0.1/clang+llvm-5.0.1-aarch64-linux-gnu.tar.xz",
+                "dir_name": "clang+llvm-5.0.1-aarch64-linux-gnu",
+            },
+
+            # macOS
+            ("Darwin", "x86_64"): {
+                "url": "https://releases.llvm.org/5.0.1/clang+llvm-5.0.1-x86_64-apple-darwin.tar.xz",
+                "dir_name": "clang+llvm-5.0.1-x86_64-apple-macosx10.9.0",
+            },
+            ("Darwin", "arm64"): {
+                "url": "https://releases.llvm.org/5.0.1/clang+llvm-5.0.1-x86_64-apple-darwin.tar.xz",
+                "dir_name": "clang+llvm-5.0.1-x86_64-apple-macosx10.9.0",
+            },
+        }
     elif version == "7.0.0":
         builds = {
             # Linux
