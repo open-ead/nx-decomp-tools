@@ -44,9 +44,6 @@ for info in utils.get_functions(version=args.version):
         elif info.status == FunctionStatus.Matching:
             if args.print_ok:
                 print(f"{Fore.GREEN}OK{Fore.RESET} {utils.format_symbol_name(info.decomp_name)}")
-        elif info.status == FunctionStatus.Wip:
-            print(
-                f"{Back.RED}{Style.BRIGHT}{Fore.WHITE} WIP {Style.RESET_ALL} {utils.format_symbol_name(info.decomp_name)}{Style.RESET_ALL}")
 
 
 def format_progress(label: str, num: int, size: int):
