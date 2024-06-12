@@ -34,7 +34,7 @@ def apply(config, args):
     config['baseimg'] = util.config.get_base_elf(version)
     config['myimg'] = util.config.get_decomp_elf(version)
     config['source_directories'] = [str(root / 'src'), str(root / 'lib')]
-    config['objdump_executable'] = "llvm-objdump"
+    config['objdump_executable'] = get_tools_bin_dir() + 'llvm-objdump'
     # ill-suited to C++ projects (and too slow for large executables)
     config['show_line_numbers_default'] = False
     for dir in (root / 'build', root / 'build/nx64-release'):
