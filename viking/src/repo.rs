@@ -7,6 +7,7 @@ pub struct Config {
     pub build_target: String,
     pub functions_csv: String,
     pub default_version: Option<String>,
+    pub skip_got_section: bool,
     pub decomp_me: Option<ConfigDecompMe>,
 }
 
