@@ -7,6 +7,7 @@ pub struct Config {
     pub build_target: String,
     pub functions_csv: String,
     pub default_version: Option<String>,
+    pub skip_got_section: Option<bool>,
     pub decomp_me: Option<ConfigDecompMe>,
 }
 
@@ -72,3 +73,4 @@ pub fn get_data_path(version: Option<&str>) -> Result<PathBuf> {
 pub fn get_build_path(version: Option<&str>) -> Result<PathBuf> {
     get_version_specific_dir_path("build", version)
 }
+
