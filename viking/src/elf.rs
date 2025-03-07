@@ -1,4 +1,11 @@
-use std::{collections::HashMap, ffi::CStr, fs::File, ops::Range, path::Path, path::PathBuf};
+use std::{
+    collections::HashMap,
+    ffi::{c_char, CStr},
+    fs::File,
+    ops::Range,
+    path::Path,
+    path::PathBuf,
+};
 
 use anyhow::{anyhow, bail, Context, Result};
 use goblin::{
@@ -145,7 +152,7 @@ impl<'elf> SymbolStringTable<'elf> {
     pub fn get_string(&self, offset: usize) -> &'elf str {
         unsafe {
             std::str::from_utf8_unchecked(
-                CStr::from_ptr(self.bytes[offset..self.bytes.len()].as_ptr() as *const i8)
+                CStr::from_ptr(self.bytes[offset..self.bytes.len()].as_ptr() as *const c_char)
                     .to_bytes(),
             )
         }
