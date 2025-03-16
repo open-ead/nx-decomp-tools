@@ -1,16 +1,7 @@
 from pathlib import Path
 import platform
 import util.config
-
-def get_tools_bin_dir():
-    path = util.config.get_repo_root() / 'tools' / 'common' / 'nx-decomp-tools-binaries'
-    system = platform.system()
-    if system == "Linux":
-        return str(path) + "/linux/"
-    if system == "Darwin":
-        return str(path) + "/macos/"
-    return ""
-
+from util.tools import find_tool
 
 def add_custom_arguments(parser):
     parser.add_argument('--version', dest='version', help='Specify which version should be recompiled on source changes')
@@ -34,7 +25,7 @@ def apply(config, args):
     config['baseimg'] = util.config.get_base_elf(version)
     config['myimg'] = util.config.get_decomp_elf(version)
     config['source_directories'] = [str(root / 'src'), str(root / 'lib')]
-    config['objdump_executable'] = get_tools_bin_dir() + 'llvm-objdump'
+    config['objdump_executable'] = find_tool('llvm-objdump')
     # ill-suited to C++ projects (and too slow for large executables)
     config['show_line_numbers_default'] = False
     for dir in (root / 'build', root / 'build/nx64-release'):
