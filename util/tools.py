@@ -1,7 +1,6 @@
 from . config import get_repo_root
 import platform
 import os
-import shutil
 
 def get_tools_bin_dir():
     path = get_repo_root() / 'tools' / 'common' / 'nx-decomp-tools-binaries'
@@ -12,9 +11,10 @@ def get_tools_bin_dir():
         return str(path) + "/macos/"
     return ""
 
-def find_tool(tool):
-    executable = shutil.which(tool)
-    if executable is not None:
-        return executable
+def find_tool(tool: str):
+    tool_from_env = os.environ.get("NX_DECOMP_TOOLS_%s" % tool.upper())
 
-    return _get_tool_binary_path() + tool
+    if tool_from_env is None:
+        return get_tools_bin_dir() + tool
+
+    return tool_from_env
