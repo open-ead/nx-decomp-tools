@@ -11,8 +11,11 @@ def get_tools_bin_dir():
         return str(path) + "/macos/"
     return ""
 
+def try_find_external_tool(tool: str):
+    return os.environ.get("NX_DECOMP_TOOLS_%s" % tool.upper())
+
 def find_tool(tool: str):
-    tool_from_env = os.environ.get("NX_DECOMP_TOOLS_%s" % tool.upper())
+    tool_from_env = try_find_external_tool(tool)
 
     if tool_from_env is None:
         return get_tools_bin_dir() + tool

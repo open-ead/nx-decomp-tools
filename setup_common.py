@@ -36,16 +36,13 @@ def _decompress_nso(nso_path: Path, dest_path: Path):
 def install_viking():
     src_path = ROOT / "tools" / "common" / "viking"
     install_path = ROOT / "tools"
-    tools = ["check", "listsym", "decompme"]
-
-    if all(os.path.exists(install_path / file_name) for file_name in tools):
-        return
+    tool_names = ["check", "listsym", "decompme"]
 
     print(">>>> installing viking (tools/check)")
 
     try:
         subprocess.check_call(["cargo", "build", "--manifest-path", src_path / "Cargo.toml", "--release"])
-        for tool in tools:
+        for tool in tool_names:
             (src_path / "target" / "release" / tool).rename(install_path / tool)
     except FileNotFoundError:
         print(sys.exc_info()[0])
