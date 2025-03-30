@@ -1,5 +1,3 @@
-import os
-import shutil
 import platform
 from pathlib import Path
 import subprocess
@@ -37,7 +35,7 @@ def install_viking():
     print(">>>> installing viking (tools/check)")
     src_path = ROOT / "tools" / "common" / "viking"
     install_path = ROOT / "tools"
-    
+
     try:
         subprocess.check_call(["cargo", "build", "--manifest-path", src_path / "Cargo.toml", "--release"])
         for tool in ["check", "listsym", "decompme"]:
