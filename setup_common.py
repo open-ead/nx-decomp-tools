@@ -1,4 +1,3 @@
-import os
 import platform
 from pathlib import Path
 import subprocess
@@ -7,7 +6,7 @@ import tarfile
 import tempfile
 import urllib.request
 
-from common.util import config
+from common.util import config, tools
 
 ROOT = Path(__file__).parent.parent.parent
 
@@ -22,33 +21,21 @@ def fail(error: str):
     print(">>> " + error)
     sys.exit(1)
 
-
-def _get_tool_binary_path():
-    base = ROOT / "tools" / "common" / "nx-decomp-tools-binaries"
-    system = platform.system()
-    if system == "Linux":
-        return str(base / "linux") + "/"
-    if system == "Darwin":
-        return str(base / "macos") + "/"
-    return ""
-
-
 def _convert_nso_to_elf(nso_path: Path):
     print(">>>> converting NSO to ELF...")
-    binpath = _get_tool_binary_path()
-    subprocess.check_call([binpath + "nx2elf", str(nso_path)])
+    subprocess.check_call([tools.find_tool("nx2elf"), str(nso_path)])
 
 
 def _decompress_nso(nso_path: Path, dest_path: Path):
     print(">>>> decompressing NSO...")
-    binpath = _get_tool_binary_path()
-    subprocess.check_call([binpath + "hactool", "-tnso",
+    subprocess.check_call([tools.find_tool("hactool"), "-tnso",
                            "--uncompressed=" + str(dest_path), str(nso_path)])
 
 def install_viking():
     print(">>>> installing viking (tools/check)")
     src_path = ROOT / "tools" / "common" / "viking"
     install_path = ROOT / "tools"
+
     try:
         subprocess.check_call(["cargo", "build", "--manifest-path", src_path / "Cargo.toml", "--release"])
         for tool in ["check", "listsym", "decompme"]:
