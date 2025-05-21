@@ -17,6 +17,9 @@ pub struct ConfigDecompMe {
     /// Compilation flags that are used for creating scratches.
     /// Can be overridden using a compilation database.
     pub default_compile_flags: String,
+
+    /// Preset ID used for categorizing.
+    pub preset_id: String,
 }
 
 lazy_static! {
