@@ -316,7 +316,6 @@ fn create_scratch(
     context: &str,
     source_code: &str,
     disassembly: &str,
-    preset_id: &str,
 ) -> Result<String> {
     let client = reqwest::blocking::Client::new();
 
@@ -330,7 +329,7 @@ fn create_scratch(
         target_asm: String,
         source_code: String,
         context: String,
-        preset_id: String,
+        preset_id: Option<String>,
     }
 
     let data = Data {
@@ -342,7 +341,7 @@ fn create_scratch(
         target_asm: disassembly.to_string(),
         source_code: source_code.to_string(),
         context: context.to_string(),
-        preset_id: preset_id.to_string(),
+        preset_id: decomp_me_config.preset_id.clone(),
     };
 
     let res_text = client
@@ -463,7 +462,6 @@ fn main() -> Result<()> {
     let disassembly = get_disassembly(function_info, &function)?;
 
 
-    let mut preset_id = decomp_me_config.preset_id.clone();
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
 
@@ -549,7 +547,6 @@ fn main() -> Result<()> {
         &context,
         &source_code,
         &disassembly,
-        &preset_id,
     )
     .context("failed to create scratch")?;
 
