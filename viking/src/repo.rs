@@ -19,7 +19,7 @@ pub struct ConfigDecompMe {
     pub default_compile_flags: String,
 
     /// Preset ID used for categorizing.
-    pub preset_id: String,
+    pub preset_id: Option<String>,
 }
 
 lazy_static! {
