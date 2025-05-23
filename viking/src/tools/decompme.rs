@@ -310,6 +310,7 @@ fn get_translation_unit(
 
 /// Returns the URL of the scratch if successful.
 fn create_scratch(
+    demangled_name: &String,
     args: &Args,
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
@@ -319,11 +320,13 @@ fn create_scratch(
     disassembly: &str,
 ) -> Result<String> {
 
+    // taken from objdiff at /objdiff-core/src/jobs/create_scratch.rs
+
     let diff_flags = [format!("--disassemble={}", info.name.clone())];
     let diff_flags = serde_json::to_string(&diff_flags)?;
     let mut form = reqwest::blocking::multipart::Form::new()
         .text("platform", "switch".to_string())
-        .text("name", info.name.clone())
+        .text("name", demangled_name.clone())
         .text("diff_label", info.name.clone())
         .text("diff_flags", diff_flags)
         .text("context", context.to_string())
@@ -455,6 +458,8 @@ fn main() -> Result<()> {
 
     let function_info = ui::fuzzy_search_function_interactively(&functions, &args.function_name)?;
 
+    let demangled_name = functions::demangle_str(&function_info.name)?;
+
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
     let version = args.version.as_deref();
@@ -462,7 +467,6 @@ fn main() -> Result<()> {
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
-
 
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
@@ -553,6 +557,7 @@ fn main() -> Result<()> {
     println!("uploading...");
 
     let url = create_scratch(
+        &demangled_name,
         &args,
         decomp_me_config,
         function_info,
@@ -563,7 +568,12 @@ fn main() -> Result<()> {
     )
     .context("failed to create scratch")?;
 
-    ui::print_note(&format!("created scratch: {}", &url));
+    ui::print_note(&format!(
+        "created scratch for \'{}\'.\nClaim the scratch: {}\nDirect link (no claim): {}",
+        demangled_name.clone(),
+        url,
+        url.find("/claim").map(|i| &url[..i]).unwrap_or(&url)
+    ));
 
     Ok(())
 }
