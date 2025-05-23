@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use addr2line::fallible_iterator::FallibleIterator;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -213,63 +214,57 @@ fn create_scratch(
     args: &Args,
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
-    flags: &str,
+    flags: &Option<String>,
     context: &str,
     source_code: &str,
     disassembly: &str,
 ) -> Result<String> {
+
+    let diff_flags = [format!("--disassemble={}", info.name.clone())];
+    let diff_flags = serde_json::to_string(&diff_flags)?;
+    let mut form = reqwest::blocking::multipart::Form::new()
+        .text("platform", "switch".to_string())
+        .text("name", info.name.clone())
+        .text("diff_label", info.name.clone())
+        .text("diff_flags", diff_flags)
+        .text("context", context.to_string())
+        .text("source_code", source_code.to_string())
+        .text("target_asm", disassembly.to_string());
+    if let Some(compiler) = &decomp_me_config.compiler_name {
+        form = form.text("compiler", compiler.to_string())
+    }
+    if let Some(compiler_flags) = flags {
+        form = form.text("compiler_flags", compiler_flags.to_string())
+    }
+    if let Some(preset) = &decomp_me_config.preset_id {
+        form = form.text("preset", preset.to_string());
+    }
+
     let client = reqwest::blocking::Client::new();
-
-    #[derive(serde::Serialize)]
-    struct Data {
-        compiler: String,
-        compiler_flags: String,
-        platform: String,
-        name: String,
-        diff_label: Option<String>,
-        target_asm: String,
-        source_code: String,
-        context: String,
-        preset_id: Option<String>,
-    }
-
-    let data = Data {
-        compiler: decomp_me_config.compiler_name.clone(),
-        compiler_flags: flags.to_string(),
-        platform: "switch".to_string(),
-        name: info.name.clone(),
-        diff_label: Some(info.name.clone()),
-        target_asm: disassembly.to_string(),
-        source_code: source_code.to_string(),
-        context: context.to_string(),
-        preset_id: decomp_me_config.preset_id.clone(),
-    };
-
-    let res_text = client
+    let response = client
         .post(format!("{}/api/scratch", &args.decomp_me_api))
-        .json(&data)
-        .send()?
-        .text()?;
-
-    #[derive(serde::Deserialize)]
-    struct ResponseData {
-        slug: String,
-    }
-
-    let res = serde_json::from_str::<ResponseData>(&res_text);
-
-    if let Some(error) = res.as_ref().err() {
-        ui::print_error(&format!("failed to upload function: {}", error));
+        .multipart(form)
+        .send()
+        .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+        
+    if !response.status().is_success() {
+        ui::print_error(&format!("failed to upload function: {}", response.status()));
         ui::print_note(&format!(
             "server response:\n{}\n",
-            &res_text.normal().yellow()
+            &response.text().unwrap_or_default().normal().yellow()
         ));
         bail!("failed to upload function");
     }
 
-    let res_data = res.unwrap();
+    #[derive(Debug, Default, Clone, serde::Deserialize)]
+    struct CreateScratchResponse {
+        pub slug: String,
+        pub claim_token: String,
+    }
 
-    Ok(format!("{}/scratch/{}", args.decomp_me_api, res_data.slug))
+    let body: CreateScratchResponse = response.json().context("Failed to parse response")?;
+
+    Ok(format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, body.slug, body.claim_token))
 }
 
 // Reimplement fmt::Display to use relative offsets rather than absolute addresses for labels.
@@ -410,16 +405,27 @@ fn main() -> Result<()> {
             true
         });
 
-        flags = command.join(" ");
-        flags += " -x c++";
+        if flags.is_some() {
+            flags = Some(command.join(" "));
+            flags.get_or_insert(String::new()).push_str(" -x c++");
+        }
     } else {
         ui::print_warning(
             "consider passing -s [.cpp source] so that the context can be automatically filled",
         );
     }
 
+    if !flags.is_some() && !decomp_me_config.compiler_name.is_some() && !decomp_me_config.preset_id.is_some() {
+        bail!("please specify either preset_id or compiler_name and default_compile_flags")
+    }
+
     println!("context: {} lines", context.matches('\n').count());
-    println!("compile flags: {}", &flags.dimmed());
+    if flags.is_some() {
+        println!("compile flags: {}", &flags.as_deref().unwrap_or(""));
+    }
+    if decomp_me_config.preset_id.is_some() {
+        println!("preset id: {}", &decomp_me_config.preset_id.as_deref().unwrap_or(""));
+    }
 
     let confirm = inquire::Confirm::new("Upload?")
         .with_default(true)
