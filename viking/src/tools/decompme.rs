@@ -60,6 +60,60 @@ struct TranslationUnit {
     path: String,
 }
 
+impl TranslationUnit {
+    pub fn try_get_and_remove_function(&mut self, function_name: &str) -> Option<String> {
+        let demangled_name = functions::demangle_str(function_name).unwrap_or(function_name.to_string());
+        let mut function_identifier = demangled_name.split("(").next()?.to_string();
+        let mut removed_namespace: String = String::new();
+        let match_index;
+        loop {
+            // Include ( to ensure that we aren't matching a sub string of another function identifier
+            let matches : Vec<_> = self.contents.match_indices(&format!("{}(", &function_identifier)).collect();
+
+            if matches.len() == 1 {
+                match_index = matches.first().unwrap().0;
+                break;
+            }
+
+            if matches.len() > 1 {
+                // Multiple functions with the same name (but different params) were found
+                return None;
+            }
+
+            // Remove namespaces from the function identifier until it is found in the code of the TU
+            let namespace_seperator_index = function_identifier.find("::")?;
+            if !removed_namespace.is_empty() {
+                removed_namespace += "::";
+            }
+            removed_namespace += &function_identifier[0..namespace_seperator_index].to_string();
+            function_identifier.replace_range(0..namespace_seperator_index + 2, "");
+        }
+        let function_text_start_index = self.contents[..match_index].rfind("\n").unwrap_or(0) + 1;
+        let mut function_text_end_index = function_text_start_index;
+        let mut indentation = 0;
+        for (i, c) in self.contents[function_text_start_index..].char_indices() {
+            if c == '{' {
+                indentation += 1;
+            } else if c == '}' {
+                indentation -= 1;
+                if indentation == 0 {
+                    function_text_end_index = i;
+                    break;
+                }
+            }
+            function_text_end_index += 1;
+        }
+        let function_text_range = function_text_start_index..function_text_end_index + function_text_start_index + 1;
+        let mut function_text = self.contents[function_text_range.clone()].to_string();
+        self.contents.replace_range(function_text_range, "");
+        if !removed_namespace.is_empty(){
+            function_text.insert_str(0, &format!("namespace {} {{\n", &removed_namespace));
+            function_text += "\n}"
+        }
+        Some(function_text)
+    }
+}
+
 fn remove_c_and_output_flags(command: &mut Vec<String>) {
     let mut remove_next = false;
     command.retain(|arg| {
@@ -358,16 +412,7 @@ fn main() -> Result<()> {
     let decomp_elf = elf::load_decomp_elf(version)?;
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
-    let disassembly = get_disassembly(function_info, &function)?;
-
-    let source_code = format!(
-        "// function name: {}\n\
-         // original address: {:#x} \n\
-         \n\
-         // move the target function from the context to the source tab",
-        &function_info.name,
-        function_info.get_start(),
-    );
+    let disassembly = get_disassembly(function_info, &function)?; 
 
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
@@ -379,14 +424,30 @@ fn main() -> Result<()> {
         .clone()
         .or_else(|| deduce_source_file_from_debug_info(&decomp_elf, &function_info.name).ok());
 
+    let mut source_code = String::new();
     if let Some(source_file) = source_file.as_deref() {
         println!("source file: {}", &source_file.dimmed());
 
         let compilation_db =
             load_compilation_database(&args).context("failed to load compilation database")?;
 
-        let tu = get_translation_unit(source_file, &compilation_db)
+        let mut tu = get_translation_unit(source_file, &compilation_db)
             .context("failed to get translation unit")?;
+
+        let function_text = tu.try_get_and_remove_function(&function_info.name).unwrap_or_else(|| {
+            ui::print_note("Unable to automatically move function to source code tab");
+            "// move the target function from the context to the source tab".to_string()
+        });
+
+        source_code = format!(
+        "// function name: {}\n\
+         // original address: {:#x} \n\
+         \n\
+         {}",
+            &function_info.name,
+            function_info.get_start(),
+            &function_text
+        );
 
         context = tu.contents.clone();
 
