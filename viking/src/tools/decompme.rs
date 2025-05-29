@@ -85,7 +85,7 @@ impl TranslationUnit {
             if !removed_namespace.is_empty() {
                 removed_namespace += "::";
             }
-            removed_namespace += &function_identifier[0..namespace_seperator_index].to_string();
+            removed_namespace += &function_identifier[0..namespace_seperator_index];
             function_identifier.replace_range(0..namespace_seperator_index + 2, "");
         }
         let function_text_start_index = self.contents[..match_index].rfind("\n").unwrap_or(0) + 1;
@@ -142,7 +142,7 @@ fn get_include_paths(stderr: &str) -> Vec<&str> {
         .collect()
 }
 
-fn uninclude_system_includes<'a>(stdout: &'a str, include_paths: &Vec<&str>) -> String {
+fn uninclude_system_includes(stdout: &str, include_paths: &Vec<&str>) -> String {
     let mut result = String::with_capacity(stdout.len());
 
     // The current include stack.
