@@ -62,13 +62,25 @@ struct TranslationUnit {
 
 impl TranslationUnit {
     pub fn try_get_and_remove_function(&mut self, function_name: &str) -> Option<String> {
-        let demangled_name = functions::demangle_str(function_name).unwrap_or(function_name.to_string());
-        let mut function_identifier = demangled_name.split("(").next()?.to_string();
-        let mut removed_namespace: String = String::new();
+        let demangled_name =
+            functions::demangle_str(function_name).unwrap_or(function_name.to_string());
+        let function_parts = demangled_name.split("(").collect::<Vec<_>>();
+        let argument_seperator_count = function_parts.last()?.chars().filter(|c| *c == ',').count();
+        let mut function_identifier = function_parts.first()?.to_string();
+        let mut removed_namespace = String::new();
         let match_index;
         loop {
             // Include ( to ensure that we aren't matching a sub string of another function identifier
-            let matches : Vec<_> = self.contents.match_indices(&format!("{}(", &function_identifier)).collect();
+            let matches: Vec<_> = self
+                .contents
+                .match_indices(&format!("{}(", &function_identifier))
+                // Filter away functions with incorrect argument count
+                .filter(|e| {
+                    let function_params_end_index = self.contents[e.0..].find(")").unwrap_or(e.0);
+                    let function_ident = &self.contents[e.0..e.0 + function_params_end_index];
+                    function_ident.chars().filter(|c| *c == ',').count() == argument_seperator_count
+                })
+                .collect();
 
             if matches.len() == 1 {
                 match_index = matches.first().unwrap().0;
@@ -103,10 +115,11 @@ impl TranslationUnit {
             }
             function_text_end_index += 1;
         }
-        let function_text_range = function_text_start_index..function_text_end_index + function_text_start_index + 1;
+        let function_text_range =
+            function_text_start_index..function_text_end_index + function_text_start_index + 1;
         let mut function_text = self.contents[function_text_range.clone()].to_string();
         self.contents.replace_range(function_text_range, "");
-        if !removed_namespace.is_empty(){
+        if !removed_namespace.is_empty() {
             function_text.insert_str(0, &format!("namespace {} {{\n", &removed_namespace));
             function_text += "\n}"
         }
@@ -412,7 +425,7 @@ fn main() -> Result<()> {
     let decomp_elf = elf::load_decomp_elf(version)?;
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
-    let disassembly = get_disassembly(function_info, &function)?; 
+    let disassembly = get_disassembly(function_info, &function)?;
 
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
@@ -434,13 +447,15 @@ fn main() -> Result<()> {
         let mut tu = get_translation_unit(source_file, &compilation_db)
             .context("failed to get translation unit")?;
 
-        let function_text = tu.try_get_and_remove_function(&function_info.name).unwrap_or_else(|| {
-            ui::print_note("Unable to automatically move function to source code tab");
-            "// move the target function from the context to the source tab".to_string()
-        });
+        let function_text = tu
+            .try_get_and_remove_function(&function_info.name)
+            .unwrap_or_else(|| {
+                ui::print_note("Unable to automatically move function to source code tab");
+                "// move the target function from the context to the source tab".to_string()
+            });
 
         source_code = format!(
-        "// function name: {}\n\
+            "// function name: {}\n\
          // original address: {:#x} \n\
          \n\
          {}",
