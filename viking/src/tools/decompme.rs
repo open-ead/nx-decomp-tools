@@ -74,14 +74,17 @@ impl TranslationUnit {
             let matches: Vec<_> = self
                 .contents
                 .match_indices(&format!("{}(", &function_identifier))
-                // Filter away functions with incorrect argument count
+                // Filter away functions with incorrect argument count or no body (declarations)
                 .filter(|e| {
                     let function_params_end_index = self.contents[e.0..].find(")").unwrap_or(e.0);
                     let function_ident = &self.contents[e.0..e.0 + function_params_end_index];
                     function_ident.chars().filter(|c| *c == ',').count() == argument_seperator_count
+                        && (self.contents[e.0..].find(" {").unwrap_or(0)
+                            == function_params_end_index + 1
+                            || self.contents[e.0..].find(" const {").unwrap_or(0)
+                                == function_params_end_index + 1)
                 })
                 .collect();
-
             if matches.len() == 1 {
                 match_index = matches.first().unwrap().0;
                 break;
