@@ -100,7 +100,18 @@ impl TranslationUnit {
             removed_namespace += &function_identifier[0..namespace_seperator_index];
             function_identifier.replace_range(0..namespace_seperator_index + 2, "");
         }
-        let function_text_start_index = self.contents[..match_index].rfind("\n").unwrap_or(0) + 1;
+        let mut function_text_start_index =
+            self.contents[..match_index].rfind("\n").unwrap_or(0) + 1;
+        let previous_line_start_index = self.contents[..function_text_start_index - 1]
+            .rfind("\n")
+            .unwrap_or(0)
+            + 1;
+        let line_before_function =
+            &self.contents[previous_line_start_index..function_text_start_index];
+        // If the function is "annotated" with a comment or template, also move that
+        if line_before_function.contains("//") || line_before_function.contains("template <") {
+            function_text_start_index = previous_line_start_index;
+        }
         let mut function_text_end_index = function_text_start_index;
         let mut indentation = 0;
         for (i, c) in self.contents[function_text_start_index..].char_indices() {
