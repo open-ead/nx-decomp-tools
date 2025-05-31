@@ -39,6 +39,18 @@ struct Args {
     function_name: String,
 }
 
+#[derive(Debug, Default, Clone, serde::Deserialize)]
+struct CreateScratchResponse {
+    pub slug: String,
+    pub claim_token: String,
+}
+
+#[derive(Debug, Default, Clone)]
+struct FinalScratchUrl {
+    pub base_url: String,
+    pub claim_url: String,
+}
+
 fn load_compilation_database(args: &Args) -> Result<json_compilation_db::Entries> {
     let mut path;
     if let Some(p) = args.compilation_database.as_ref() {
@@ -318,7 +330,7 @@ fn create_scratch(
     context: &str,
     source_code: &str,
     disassembly: &str,
-) -> Result<String> {
+) -> Result<FinalScratchUrl> {
 
     // taken from objdiff at /objdiff-core/src/jobs/create_scratch.rs
 
@@ -326,7 +338,7 @@ fn create_scratch(
     let diff_flags = serde_json::to_string(&diff_flags)?;
     let mut form = reqwest::blocking::multipart::Form::new()
         .text("platform", "switch".to_string())
-        .text("name", demangled_name.clone())
+        .text("name", demangled_name.to_owned())
         .text("diff_label", info.name.clone())
         .text("diff_flags", diff_flags)
         .text("context", context.to_string())
@@ -365,15 +377,15 @@ fn create_scratch(
         bail!("failed to upload function");
     }
 
-    #[derive(Debug, Default, Clone, serde::Deserialize)]
-    struct CreateScratchResponse {
-        pub slug: String,
-        pub claim_token: String,
-    }
-
     let body: CreateScratchResponse = response.json().context("Failed to parse response")?;
 
-    Ok(format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, body.slug, body.claim_token))
+    let __base_url: String = format!("{}/scratch/{}/", args.decomp_me_api, body.slug);
+    let __claim_url: String = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, body.slug, body.claim_token);
+
+    Ok(FinalScratchUrl {
+        base_url: __base_url,
+        claim_url: __claim_url,
+    })
 }
 
 // Reimplement fmt::Display to use relative offsets rather than absolute addresses for labels.
@@ -535,8 +547,9 @@ fn main() -> Result<()> {
         );
     }
 
-    if !flags.is_some() && !decomp_me_config.compiler_name.is_some() && !decomp_me_config.preset_id.is_some() {
-        bail!("please specify either preset_id or compiler_name and default_compile_flags")
+    if flags.is_none() && decomp_me_config.compiler_name.is_none() && decomp_me_config.preset_id.is_none() {
+        ui::print_error("please specify either: \n- preset_id (You can get it from https://decomp.me/preset or suggest a new one via github issues) \nor \n- compiler_name and\n- default_compile_flags");
+        std::process::exit(1);
     }
 
     println!("context: {} lines", context.matches('\n').count());
@@ -556,7 +569,7 @@ fn main() -> Result<()> {
 
     println!("uploading...");
 
-    let url = create_scratch(
+    let urls: FinalScratchUrl = create_scratch(
         &demangled_name,
         &args,
         decomp_me_config,
@@ -571,8 +584,8 @@ fn main() -> Result<()> {
     ui::print_note(&format!(
         "created scratch for \'{}\'.\nClaim the scratch: {}\nDirect link (no claim): {}",
         demangled_name.clone(),
-        url,
-        url.find("/claim").map(|i| &url[..i]).unwrap_or(&url)
+        urls.claim_url.clone(),
+        urls.base_url.clone(),
     ));
 
     Ok(())
