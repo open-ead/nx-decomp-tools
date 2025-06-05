@@ -39,7 +39,7 @@ pub struct Function<'a> {
     pub code: &'a [u8],
 }
 
-impl<'a> Function<'a> {
+impl Function<'_> {
     #[inline]
     pub fn get_addr_range(&self) -> Range<u64> {
         self.addr..(self.addr + self.code.len() as u64)
