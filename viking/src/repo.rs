@@ -12,15 +12,17 @@ pub struct Config {
 
 #[derive(serde::Deserialize)]
 pub struct ConfigDecompMe {
-    /// Either Compiler and Flags or Preset Id need to be specified.
+    /// Must specify either ( Compiler and Flags ) or ( Preset Id ).
 
     /// Name of the compiler used to compile the code
     pub compiler_name: Option<String>,
-    /// Compilation flags that are used for creating scratches.
-    /// Can be overridden using a compilation database.
-    pub default_compile_flags: Option<String>,
 
-    /// Preset ID used for categorizing.
+    /// Compilation flags that are used for creating scratches.
+    pub default_compile_flags: Option<String>,
+    /// Toggle overriding of flags with database flags. (True by default)
+    pub override_compile_flags: Option<bool>,
+
+    /// Preset ID used for categorizing. Requires registering preset with compiler and flags.
     pub preset_id: Option<String>,
 }
 

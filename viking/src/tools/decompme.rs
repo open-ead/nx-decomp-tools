@@ -101,7 +101,7 @@ fn get_include_paths(stderr: &str) -> Vec<&str> {
         .collect()
 }
 
-fn uninclude_system_includes<'a>(stdout: &'a str, include_paths: &Vec<&str>) -> String {
+fn uninclude_system_includes(stdout: &str, include_paths: &Vec<&str>) -> String {
     let mut result = String::with_capacity(stdout.len());
 
     // The current include stack.
@@ -233,10 +233,11 @@ fn create_scratch(
     disassembly: &str,
 ) -> Result<FinalScratchUrl> {
 
-    // taken from objdiff at /objdiff-core/src/jobs/create_scratch.rs
+    // updated using objdiff at https://github.com/encounter/objdiff/blob/a367af612b8b30b5bdf40e5c1d0e45df46a5e3e9/objdiff/core/src/jobs/create_scratch.rs
 
     let diff_flags = [format!("--disassemble={}", info.name.clone())];
     let diff_flags = serde_json::to_string(&diff_flags)?;
+
     let mut form = reqwest::blocking::multipart::Form::new()
         .text("platform", "switch".to_string())
         .text("name", demangled_name.to_owned())
@@ -261,7 +262,7 @@ fn create_scratch(
         .multipart(form)
         .send()
         .map_err(|e| anyhow!("Failed to send request: {}", e))?;
-        
+
     if !response.status().is_success() {
         ui::print_error(&format!("failed to upload function: {}", response.status()));
         ui::print_note(&format!(
@@ -273,8 +274,8 @@ fn create_scratch(
 
     let body: CreateScratchResponse = response.json().context("Failed to parse response")?;
 
-    let __base_url: String = format!("{}/scratch/{}/", args.decomp_me_api, body.slug);
-    let __claim_url: String = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, body.slug, body.claim_token);
+    let __base_url = format!("{}/scratch/{}/", args.decomp_me_api, body.slug);
+    let __claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, body.slug, body.claim_token);
 
     Ok(FinalScratchUrl {
         base_url: __base_url,
@@ -422,9 +423,9 @@ fn main() -> Result<()> {
             true
         });
 
-        if flags.is_some() {
-            flags = Some(command.join(" "));
-            flags.get_or_insert(String::new()).push_str(" -x c++");
+        if decomp_me_config.override_compile_flags.unwrap_or(true) && flags.is_some() {
+            flags = Some(format!("{} -x c++", command.join(" ")));
+
         }
     } else {
         ui::print_warning(
@@ -432,17 +433,24 @@ fn main() -> Result<()> {
         );
     }
 
-    if flags.is_none() && decomp_me_config.compiler_name.is_none() && decomp_me_config.preset_id.is_none() {
+    if decomp_me_config.compiler_name.is_none() && decomp_me_config.preset_id.is_none() {
         ui::print_error("please specify either: \n- preset_id (You can get it from https://decomp.me/preset or suggest a new one via github issues) \nor \n- compiler_name and\n- default_compile_flags");
-        std::process::exit(1);
+        ui::print_error(
+            "please specify either: \n\
+            - preset_id (You can get it from https://decomp.me/preset or suggest a new one via github issues)\n\
+            or\n\
+            - compiler_name and\n\
+            - default_compile_flags"
+        );
+        bail!("missing required configuration");
     }
 
     println!("context: {} lines", context.matches('\n').count());
-    if flags.is_some() {
-        println!("compile flags: {}", &flags.as_deref().unwrap_or(""));
+    if let Some(flags_str) = flags.as_ref() {
+        println!("compile flags: {}", flags_str);
     }
-    if decomp_me_config.preset_id.is_some() {
-        println!("preset id: {}", &decomp_me_config.preset_id.as_deref().unwrap_or(""));
+    if let Some(preset_id) = decomp_me_config.preset_id.as_ref() {
+        println!("preset id: {}", preset_id);
     }
 
     let confirm = inquire::Confirm::new("Upload?")
@@ -454,7 +462,7 @@ fn main() -> Result<()> {
 
     println!("uploading...");
 
-    let urls: FinalScratchUrl = create_scratch(
+    let urls = create_scratch(
         &demangled_name,
         &args,
         decomp_me_config,
@@ -467,7 +475,9 @@ fn main() -> Result<()> {
     .context("failed to create scratch")?;
 
     ui::print_note(&format!(
-        "created scratch for \'{}\'.\nClaim the scratch: {}\nDirect link (no claim): {}",
+        "created scratch for \'{}\'.\n\
+        Claim the scratch: {}\n\
+        Direct link (no claim): {}",
         demangled_name.clone(),
         urls.claim_url.clone(),
         urls.base_url.clone(),
