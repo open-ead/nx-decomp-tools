@@ -5,7 +5,10 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use argh::FromArgs;
+use clang::{Clang, EntityKind, Index};
 use colored::Colorize;
+use std::io::Write;
+use tempfile::Builder;
 use viking::elf;
 use viking::functions;
 use viking::repo;
@@ -60,84 +63,87 @@ struct TranslationUnit {
     path: String,
 }
 
-impl TranslationUnit {
-    pub fn try_get_and_remove_function(&mut self, function_name: &str) -> Option<String> {
-        let demangled_name =
-            functions::demangle_str(function_name).unwrap_or(function_name.to_string());
-        let function_parts = demangled_name.split("(").collect::<Vec<_>>();
-        let argument_seperator_count = function_parts.last()?.chars().filter(|c| *c == ',').count();
-        let mut function_identifier = function_parts.first()?.to_string();
-        let mut removed_namespace = String::new();
-        let match_index;
-        loop {
-            // Include ( to ensure that we aren't matching a sub string of another function identifier
-            let matches: Vec<_> = self
-                .contents
-                .match_indices(&format!("{}(", &function_identifier))
-                // Filter away functions with incorrect argument count or no body (declarations)
-                .filter(|e| {
-                    let function_params_end_index = self.contents[e.0..].find(")").unwrap_or(e.0);
-                    let function_ident = &self.contents[e.0..e.0 + function_params_end_index];
-                    function_ident.chars().filter(|c| *c == ',').count() == argument_seperator_count
-                        && (self.contents[e.0..].find(" {").unwrap_or(0)
-                            == function_params_end_index + 1
-                            || self.contents[e.0..].find(" const {").unwrap_or(0)
-                                == function_params_end_index + 1)
-                })
-                .collect();
-            if matches.len() == 1 {
-                match_index = matches.first().unwrap().0;
-                break;
-            }
+struct FunctionTextInfo {
+    range_start: usize,
+    range_end: usize,
+    namespace: String,
+}
 
-            if matches.len() > 1 {
-                // Multiple functions with the same name (but different params) were found
-                return None;
-            }
-
-            // Remove namespaces from the function identifier until it is found in the code of the TU
-            let namespace_seperator_index = function_identifier.find("::")?;
-            if !removed_namespace.is_empty() {
-                removed_namespace += "::";
-            }
-            removed_namespace += &function_identifier[0..namespace_seperator_index];
-            function_identifier.replace_range(0..namespace_seperator_index + 2, "");
-        }
-        let mut function_text_start_index =
-            self.contents[..match_index].rfind("\n").unwrap_or(0) + 1;
-        let previous_line_start_index = self.contents[..function_text_start_index - 1]
-            .rfind("\n")
-            .unwrap_or(0)
-            + 1;
-        let line_before_function =
-            &self.contents[previous_line_start_index..function_text_start_index];
-        // If the function is "annotated" with a comment or template, also move that
-        if line_before_function.contains("//") || line_before_function.contains("template <") {
-            function_text_start_index = previous_line_start_index;
-        }
-        let mut function_text_end_index = function_text_start_index;
-        let mut indentation = 0;
-        for (i, c) in self.contents[function_text_start_index..].char_indices() {
-            if c == '{' {
-                indentation += 1;
-            } else if c == '}' {
-                indentation -= 1;
-                if indentation == 0 {
-                    function_text_end_index = i;
-                    break;
+fn try_find_function_from_ast_entity<'tu>(
+    entity: clang::Entity<'tu>,
+    fn_name: &str,
+) -> Option<FunctionTextInfo> {
+    for child in entity.get_children() {
+        // The enum entry name FunctionDecl is missleading here and it applies to both function
+        // declarations and definitions like Method
+        if child.get_kind() == EntityKind::Method || child.get_kind() == EntityKind::FunctionDecl {
+            if let Some(name) = child.get_mangled_name() {
+                if name.strip_prefix("_").unwrap_or(&name) == fn_name && child.is_definition() {
+                    let range = child.get_range();
+                    if let Some(range) = range {
+                        let start = range.get_start().get_file_location().offset as usize;
+                        let end = range.get_end().get_file_location().offset as usize;
+                        let mut parent = Some(entity);
+                        let mut namespace = String::new();
+                        while let Some(p) = parent {
+                            if p.get_kind() != EntityKind::Namespace {
+                                break;
+                            }
+                            let name = p.get_display_name();
+                            if let Some(name) = name {
+                                if !namespace.is_empty() {
+                                    namespace.insert_str(0, "::");
+                                }
+                                namespace.insert_str(0, &name);
+                            }
+                            parent = p.get_lexical_parent();
+                        }
+                        return Some(FunctionTextInfo {
+                            range_start: start,
+                            range_end: end,
+                            namespace,
+                        });
+                    }
                 }
             }
-            function_text_end_index += 1;
         }
-        let function_text_range =
-            function_text_start_index..function_text_end_index + function_text_start_index + 1;
-        let mut function_text = self.contents[function_text_range.clone()].to_string();
-        self.contents.replace_range(function_text_range, "");
-        if !removed_namespace.is_empty() {
-            function_text.insert_str(0, &format!("namespace {} {{\n", &removed_namespace));
-            function_text += "\n}"
+        let recursion_result = try_find_function_from_ast_entity(child, fn_name);
+        if recursion_result.is_some() {
+            return recursion_result;
         }
-        Some(function_text)
+    }
+    None
+}
+
+impl TranslationUnit {
+    fn get_function_with_libclang(&self, function_name: &str) -> Result<FunctionTextInfo> {
+        // Create temporary file to pass as input to libclang. Must have the ".cpp" extension to be
+        // parsed correctly
+        let mut temp_preprocessed_file = Builder::new().suffix(".cpp").tempfile()?;
+        write!(temp_preprocessed_file, "{}", &self.contents)?;
+        let clang = Clang::new().map_err(anyhow::Error::msg)?;
+        let index = Index::new(&clang, false, false);
+        let tu = index.parser(temp_preprocessed_file.path()).parse()?;
+        try_find_function_from_ast_entity(tu.get_entity(), function_name)
+            .context("Unable to find function from AST")
+    }
+    pub fn try_get_and_remove_function(&mut self, function_name: &str) -> Result<String> {
+        let FunctionTextInfo {
+            mut range_start,
+            range_end,
+            namespace,
+        } = self.get_function_with_libclang(function_name)?;
+        // Expand function text range to nearest newline before the function to include comments and/or
+        // a template assosiated with the function
+        if let Some(index) = self.contents[..range_start].rfind("\n\n") {
+            range_start = index + 2;
+        }
+        let mut function_text = self.contents[range_start..range_end].to_string();
+        if !namespace.is_empty() {
+            function_text = format!("namespace {} {{\n{}\n}}", namespace, function_text);
+        }
+        self.contents.replace_range(range_start..range_end, "");
+        Ok(function_text)
     }
 }
 
@@ -463,8 +469,8 @@ fn main() -> Result<()> {
 
         let function_text = tu
             .try_get_and_remove_function(&function_info.name)
-            .unwrap_or_else(|| {
-                ui::print_note("Unable to automatically move function to source code tab");
+            .unwrap_or_else(|err| {
+                ui::print_note(&format!("Unable to automatically move function to source code tab (caused by error: {})", &err));
                 "// move the target function from the context to the source tab".to_string()
             });
 
