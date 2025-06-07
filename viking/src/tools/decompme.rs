@@ -76,7 +76,10 @@ fn try_find_function_from_ast_entity<'tu>(
     for child in entity.get_children() {
         // The enum entry name FunctionDecl is missleading here and it applies to both function
         // declarations and definitions like Method
-        if child.get_kind() == EntityKind::Method || child.get_kind() == EntityKind::FunctionDecl {
+        if child.get_kind() == EntityKind::Method
+            || child.get_kind() == EntityKind::FunctionDecl
+            || child.get_kind() == EntityKind::Constructor
+        {
             if let Some(name) = child.get_mangled_name() {
                 if name.strip_prefix("_").unwrap_or(&name) == fn_name && child.is_definition() {
                     let range = child.get_range();
