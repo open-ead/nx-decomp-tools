@@ -9,7 +9,7 @@ def try_find_binaries_repo_tool(tool: str):
     tool_path = str(binaries_repo_path)
     if system == "Linux":
         tool_path += "/linux/"
-    if system == "Darwin":
+    elif system == "Darwin":
         tool_path += "/macos/"
     tool_path += tool
     if os.path.isfile(tool_path):
