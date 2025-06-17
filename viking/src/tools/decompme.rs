@@ -5,7 +5,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use argh::FromArgs;
-use clang::{Clang, EntityKind, Index};
+use clang::{Clang, Index};
 use colored::Colorize;
 use std::io::Write;
 use tempfile::Builder;
@@ -73,27 +73,23 @@ fn try_find_function_from_ast_entity<'tu>(
     entity: clang::Entity<'tu>,
     fn_name: &str,
 ) -> Option<FunctionTextInfo> {
+    use clang::EntityKind::*;
     for child in entity.get_children() {
         // The enum entry name FunctionDecl is missleading here and it applies to both function
         // declarations and definitions like Method
-        if child.get_kind() == EntityKind::Method
-            || child.get_kind() == EntityKind::FunctionDecl
-            || child.get_kind() == EntityKind::Constructor
-        {
+        if matches!(child.get_kind(), Method | FunctionDecl | Constructor) {
             if let Some(name) = child.get_mangled_name() {
                 if name.strip_prefix("_").unwrap_or(&name) == fn_name && child.is_definition() {
-                    let range = child.get_range();
-                    if let Some(range) = range {
+                    if let Some(range) = child.get_range() {
                         let start = range.get_start().get_file_location().offset as usize;
                         let end = range.get_end().get_file_location().offset as usize;
                         let mut parent = Some(entity);
                         let mut namespace = String::new();
                         while let Some(p) = parent {
-                            if p.get_kind() != EntityKind::Namespace {
+                            if p.get_kind() != Namespace {
                                 break;
                             }
-                            let name = p.get_display_name();
-                            if let Some(name) = name {
+                            if let Some(name) = p.get_display_name() {
                                 if !namespace.is_empty() {
                                     namespace.insert_str(0, "::");
                                 }
