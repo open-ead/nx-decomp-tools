@@ -2,6 +2,7 @@ import platform
 from pathlib import Path
 import subprocess
 import sys
+import warnings
 import tarfile
 import tempfile
 import urllib.request
@@ -21,12 +22,16 @@ def fail(error: str):
     print(">>> " + error)
     sys.exit(1)
 
-def _convert_nso_to_elf(nso_path: Path):
+def _convert_nso_to_elf(nso_path: Path, export_uncompressed_nso=True):
     print(">>>> converting NSO to ELF...")
-    subprocess.check_call([tools.find_tool("nx2elf"), str(nso_path)])
+    command = [tools.find_tool("nx2elf"), str(nso_path)];
+    if export_uncompressed_nso:
+        command.append("--export-uncompressed")
+    subprocess.check_call(command)
 
 
 def _decompress_nso(nso_path: Path, dest_path: Path):
+    warnings.warn("Using hactool to decompress the target NSO is deprecated, please use `_convert_nso_to_elf` instead", DeprecationWarning, stacklevel=2)
     print(">>>> decompressing NSO...")
     subprocess.check_call([tools.find_tool("hactool"), "-tnso",
                            "--uncompressed=" + str(dest_path), str(nso_path)])
