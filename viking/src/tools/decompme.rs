@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use addr2line::fallible_iterator::FallibleIterator;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -416,22 +415,10 @@ fn deduce_source_file_from_debug_info(
     decomp_elf: &elf::OwnedElf,
     function_name: &str,
 ) -> Result<String> {
-    let symbol = elf::find_function_symbol_by_name(decomp_elf, function_name)?;
+    let ctx = elf::create_adr2line_ctx_for(decomp_elf)?;
+    let file = elf::find_file_and_line_by_symbol(decomp_elf, &ctx, function_name)?.0;
 
-    let data: &[u8] = &decomp_elf.as_owner().1;
-    let file = addr2line::object::read::File::parse(data)?;
-    let ctx = addr2line::Context::new(&file)?;
-
-    // Grab the location of the last frame (we choose the last frame to ignore inline function frames).
-    let frame = ctx
-        .find_frames(symbol.st_value)?
-        .last()?
-        .context("no frame found")?;
-
-    let loc = frame.location.context("no location found")?;
-    let file = loc.file.context("no file found")?;
-
-    Ok(file.to_string())
+    Ok(file)
 }
 
 fn main() -> Result<()> {
