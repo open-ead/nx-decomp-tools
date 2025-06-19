@@ -73,43 +73,52 @@ fn try_find_function_from_ast_entity<'tu>(
     entity: clang::Entity<'tu>,
     fn_name: &str,
 ) -> Option<FunctionTextInfo> {
+    fn get_namespace_string<'tu>(entity: clang::Entity<'tu>) -> String {
+        let mut parent = Some(entity);
+        let mut namespace = String::new();
+        while let Some(p) = parent {
+            if p.get_kind() != Namespace {
+                break;
+            }
+            if let Some(name) = p.get_display_name() {
+                if !namespace.is_empty() {
+                    namespace.insert_str(0, "::");
+                }
+                namespace.insert_str(0, &name);
+            }
+            parent = p.get_lexical_parent();
+        }
+        namespace
+    }
+
     use clang::EntityKind::*;
     for child in entity.get_children() {
-        // The enum entry name FunctionDecl is missleading here and it applies to both function
+        // The enum entry name FunctionDecl is misleading here and it applies to both function
         // declarations and definitions like Method
-        if matches!(child.get_kind(), Method | FunctionDecl | Constructor) {
-            if let Some(name) = child.get_mangled_name() {
-                if name.strip_prefix("_").unwrap_or(&name) == fn_name && child.is_definition() {
-                    if let Some(range) = child.get_range() {
-                        let start = range.get_start().get_file_location().offset as usize;
-                        let end = range.get_end().get_file_location().offset as usize;
-                        let mut parent = Some(entity);
-                        let mut namespace = String::new();
-                        while let Some(p) = parent {
-                            if p.get_kind() != Namespace {
-                                break;
-                            }
-                            if let Some(name) = p.get_display_name() {
-                                if !namespace.is_empty() {
-                                    namespace.insert_str(0, "::");
-                                }
-                                namespace.insert_str(0, &name);
-                            }
-                            parent = p.get_lexical_parent();
-                        }
-                        return Some(FunctionTextInfo {
-                            range_start: start,
-                            range_end: end,
-                            namespace,
-                        });
-                    }
-                }
+        if !matches!(child.get_kind(), Method | FunctionDecl | Constructor) {
+            let recursion_result = try_find_function_from_ast_entity(child, fn_name);
+            if recursion_result.is_some() {
+                return recursion_result;
             }
+            continue;
         }
-        let recursion_result = try_find_function_from_ast_entity(child, fn_name);
-        if recursion_result.is_some() {
-            return recursion_result;
+        let name = child.get_mangled_name();
+        let range = child.get_range();
+        if !name.is_some_and(|name| name.strip_prefix("_").unwrap_or(&name) == fn_name)
+            || !child.is_definition()
+            || range.is_none()
+        {
+            continue;
         }
+        let range = range.unwrap();
+        let start = range.get_start().get_file_location().offset as usize;
+        let end = range.get_end().get_file_location().offset as usize;
+        let namespace = get_namespace_string(entity);
+        return Some(FunctionTextInfo {
+            range_start: start,
+            range_end: end,
+            namespace,
+        });
     }
     None
 }
