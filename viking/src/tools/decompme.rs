@@ -104,8 +104,11 @@ fn try_find_function_from_ast_entity<'tu>(
         }
         let name = child.get_mangled_name();
         let range = child.get_range();
-        if !name.is_some_and(|name| name.strip_prefix("_").unwrap_or(&name) == fn_name)
-            || !child.is_definition()
+        if name.is_none_or(|name| {
+            // On some platfroms libclang mangled symbols have two underscores at the start instead
+            // of one
+            name.strip_prefix("_").unwrap_or(&name) != fn_name && name != fn_name
+        }) || !child.is_definition()
             || range.is_none()
         {
             continue;
@@ -148,7 +151,7 @@ impl TranslationUnit {
         }
         let mut function_text = self.contents[range_start..range_end].to_string();
         if !namespace.is_empty() {
-            function_text = format!("namespace {} {{\n{}\n}}", namespace, function_text);
+            function_text = format!("namespace {namespace} {{\n{function_text}\n}}");
         }
         self.contents.replace_range(range_start..range_end, "");
         Ok(function_text)
@@ -291,7 +294,7 @@ fn get_translation_unit(
     let entry = compilation_db
         .iter()
         .find(|entry| entry.file == canonical_path)
-        .with_context(|| format!("failed to find source file {}", source_file))?;
+        .with_context(|| format!("failed to find source file {source_file}"))?;
 
     let command = entry.arguments.clone();
     let contents = run_preprocessor(entry).context("failed to run preprocessor")?;
@@ -352,7 +355,7 @@ fn create_scratch(
     let res = serde_json::from_str::<ResponseData>(&res_text);
 
     if let Some(error) = res.as_ref().err() {
-        ui::print_error(&format!("failed to upload function: {}", error));
+        ui::print_error(&format!("failed to upload function: {error}"));
         ui::print_note(&format!(
             "server response:\n{}\n",
             &res_text.normal().yellow()
@@ -382,7 +385,7 @@ impl std::fmt::Display for InstructionWrapper {
                 bad64::Operand::Label(bad64::Imm::Unsigned(x)) => {
                     write!(f, " {}", x.wrapping_sub(insn.address()))?
                 }
-                _ => write!(f, " {}", op)?,
+                _ => write!(f, " {op}")?,
             }
         }
 
