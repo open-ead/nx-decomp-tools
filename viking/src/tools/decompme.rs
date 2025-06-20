@@ -5,7 +5,10 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use argh::FromArgs;
+use clang::{Clang, Index};
 use colored::Colorize;
+use std::io::Write;
+use tempfile::Builder;
 use viking::elf;
 use viking::functions;
 use viking::repo;
@@ -60,6 +63,98 @@ struct TranslationUnit {
     path: String,
 }
 
+struct FunctionTextInfo {
+    range_start: usize,
+    range_end: usize,
+    namespace: String,
+}
+
+fn try_find_function_from_ast_entity<'tu>(
+    entity: clang::Entity<'tu>,
+    fn_name: &str,
+) -> Option<FunctionTextInfo> {
+    fn get_namespace_string<'tu>(entity: clang::Entity<'tu>) -> String {
+        let mut parent = Some(entity);
+        let mut namespace = String::new();
+        while let Some(p) = parent {
+            if p.get_kind() != Namespace {
+                break;
+            }
+            if let Some(name) = p.get_display_name() {
+                if !namespace.is_empty() {
+                    namespace.insert_str(0, "::");
+                }
+                namespace.insert_str(0, &name);
+            }
+            parent = p.get_lexical_parent();
+        }
+        namespace
+    }
+
+    use clang::EntityKind::*;
+    for child in entity.get_children() {
+        // The enum entry name FunctionDecl is misleading here and it applies to both function
+        // declarations and definitions like Method
+        if !matches!(child.get_kind(), Method | FunctionDecl | Constructor) {
+            let recursion_result = try_find_function_from_ast_entity(child, fn_name);
+            if recursion_result.is_some() {
+                return recursion_result;
+            }
+            continue;
+        }
+        let name = child.get_mangled_name();
+        let range = child.get_range();
+        if !name.is_some_and(|name| name.strip_prefix("_").unwrap_or(&name) == fn_name)
+            || !child.is_definition()
+            || range.is_none()
+        {
+            continue;
+        }
+        let range = range.unwrap();
+        let start = range.get_start().get_file_location().offset as usize;
+        let end = range.get_end().get_file_location().offset as usize;
+        let namespace = get_namespace_string(entity);
+        return Some(FunctionTextInfo {
+            range_start: start,
+            range_end: end,
+            namespace,
+        });
+    }
+    None
+}
+
+impl TranslationUnit {
+    fn get_function_with_libclang(&self, function_name: &str) -> Result<FunctionTextInfo> {
+        // Create temporary file to pass as input to libclang. Must have the ".cpp" extension to be
+        // parsed correctly
+        let mut temp_preprocessed_file = Builder::new().suffix(".cpp").tempfile()?;
+        write!(temp_preprocessed_file, "{}", &self.contents)?;
+        let clang = Clang::new().map_err(anyhow::Error::msg)?;
+        let index = Index::new(&clang, false, false);
+        let tu = index.parser(temp_preprocessed_file.path()).parse()?;
+        try_find_function_from_ast_entity(tu.get_entity(), function_name)
+            .context("Unable to find function from AST")
+    }
+    pub fn try_get_and_remove_function(&mut self, function_name: &str) -> Result<String> {
+        let FunctionTextInfo {
+            mut range_start,
+            range_end,
+            namespace,
+        } = self.get_function_with_libclang(function_name)?;
+        // Expand function text range to nearest newline before the function to include comments and/or
+        // a template assosiated with the function
+        if let Some(index) = self.contents[..range_start].rfind("\n\n") {
+            range_start = index + 2;
+        }
+        let mut function_text = self.contents[range_start..range_end].to_string();
+        if !namespace.is_empty() {
+            function_text = format!("namespace {} {{\n{}\n}}", namespace, function_text);
+        }
+        self.contents.replace_range(range_start..range_end, "");
+        Ok(function_text)
+    }
+}
+
 fn remove_c_and_output_flags(command: &mut Vec<String>) {
     let mut remove_next = false;
     command.retain(|arg| {
@@ -88,7 +183,7 @@ fn get_include_paths(stderr: &str) -> Vec<&str> {
         .collect()
 }
 
-fn uninclude_system_includes<'a>(stdout: &'a str, include_paths: &Vec<&str>) -> String {
+fn uninclude_system_includes(stdout: &str, include_paths: &Vec<&str>) -> String {
     let mut result = String::with_capacity(stdout.len());
 
     // The current include stack.
@@ -360,15 +455,6 @@ fn main() -> Result<()> {
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
 
-    let source_code = format!(
-        "// function name: {}\n\
-         // original address: {:#x} \n\
-         \n\
-         // move the target function from the context to the source tab",
-        &function_info.name,
-        function_info.get_start(),
-    );
-
     let mut flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
 
@@ -379,14 +465,32 @@ fn main() -> Result<()> {
         .clone()
         .or_else(|| deduce_source_file_from_debug_info(&decomp_elf, &function_info.name).ok());
 
+    let mut source_code = String::new();
     if let Some(source_file) = source_file.as_deref() {
         println!("source file: {}", &source_file.dimmed());
 
         let compilation_db =
             load_compilation_database(&args).context("failed to load compilation database")?;
 
-        let tu = get_translation_unit(source_file, &compilation_db)
+        let mut tu = get_translation_unit(source_file, &compilation_db)
             .context("failed to get translation unit")?;
+
+        let function_text = tu
+            .try_get_and_remove_function(&function_info.name)
+            .unwrap_or_else(|err| {
+                ui::print_note(&format!("Unable to automatically move function to source code tab (caused by error: {})", &err));
+                "// move the target function from the context to the source tab".to_string()
+            });
+
+        source_code = format!(
+            "// function name: {}\n\
+         // original address: {:#x} \n\
+         \n\
+         {}",
+            &function_info.name,
+            function_info.get_start(),
+            &function_text
+        );
 
         context = tu.contents.clone();
 
