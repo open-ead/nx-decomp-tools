@@ -269,7 +269,7 @@ fn check_function(
                         ui::format_symbol_name(name),
                     ),
                 );
-                ui::print_detail_ex(&mut lock, &format!("{mismatch}"));
+                ui::print_detail_ex(&mut lock, &mismatch.to_string());
                 return Ok(CheckResult::MismatchError);
             }
         }
