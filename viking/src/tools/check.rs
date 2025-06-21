@@ -301,9 +301,14 @@ fn check_function(
                 return Ok(CheckResult::MatchWarn);
             } else {
                 if let Some(ctx) = addr2line_ctx {
-                    let (file, line) =
-                        elf::find_file_and_line_by_symbol(checker.decomp_elf, ctx, &function.name)?;
-                    check_mismatch_comment(&file, line)?
+                    if args.check_mismatch_comments {
+                        let (file, line) = elf::find_file_and_line_by_symbol(
+                            checker.decomp_elf,
+                            ctx,
+                            &function.name,
+                        )?;
+                        check_mismatch_comment(&file, line)?
+                    }
                 }
                 if function.status == Status::NotDecompiled {
                     ui::print_note(&format!(
@@ -414,7 +419,7 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
             }
             // addr2line structs can't be safely shared between threads, so we create one context
             // per thread (NOT per iteration)
-            let ctx = elf::create_adr2line_ctx_for(checker.decomp_elf).expect(
+            let ctx = elf::create_addr2line_ctx_for(checker.decomp_elf).expect(
                 "The decomp elf should be valid, so creating an addr2line context should work",
             );
             Some(ctx)

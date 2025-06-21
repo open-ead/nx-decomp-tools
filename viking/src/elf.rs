@@ -7,8 +7,8 @@ use std::{
     path::PathBuf,
 };
 
+use addr2line::{fallible_iterator::FallibleIterator, LookupResult};
 use anyhow::{anyhow, bail, Context, Result};
-use addr2line::fallible_iterator::FallibleIterator;
 use goblin::{
     container,
     elf::{
@@ -335,25 +335,43 @@ pub fn get_function_by_name<'a>(
     get_function(elf, symbol.st_value, symbol.st_size)
 }
 
-pub type Addr2LineContext = addr2line::Context<addr2line::gimli::EndianRcSlice<addr2line::gimli::RunTimeEndian>>;
+pub type Addr2LineContext =
+    addr2line::Context<addr2line::gimli::EndianRcSlice<addr2line::gimli::RunTimeEndian>>;
 
-pub fn create_adr2line_ctx_for(elf: &OwnedElf) -> Result<Addr2LineContext> {
+pub fn create_addr2line_ctx_for(elf: &OwnedElf) -> Result<Addr2LineContext> {
     let data: &[u8] = &elf.as_owner().1;
     let file = addr2line::object::read::File::parse(data)?;
     Ok(addr2line::Context::new(&file)?)
 }
 
-pub fn find_file_and_line_by_symbol(elf: &OwnedElf, ctx: &Addr2LineContext, sym: &str) -> Result<(String, u32)> {
+pub fn find_file_and_line_by_symbol(
+    elf: &OwnedElf,
+    ctx: &Addr2LineContext,
+    sym: &str,
+) -> Result<(String, u32)> {
     let symbol = find_function_symbol_by_name(elf, sym)?;
 
-    // Grab the location of the last frame (we choose the last frame to ignore inline function frames).
-    let frame = ctx
-        .find_frames(symbol.st_value)?
-        .last()?
-        .context("no frame found")?;
+    let frames = ctx.find_frames(symbol.st_value);
 
+    let frame = match frames {
+        LookupResult::Output(frames) => frames
+            .context("failed to parse dwarf")?
+            .last()
+            .context("no frame found")?
+            .expect("frames in the frame iter should always be valid"),
+        LookupResult::Load {
+            load: _,
+            continuation: _,
+        } => {
+            return Err(anyhow!(
+                "unexpect LookupResult (maybe input elf has split dwarf?)"
+            ))
+        }
+    };
+
+    // Grab the location of the last frame (we choose the last frame to ignore inline function frames).
     let loc = frame.location.context("no location found")?;
     let file = loc.file.context("no file found")?;
-    let line = loc.line.context("no file found")?;
+    let line = loc.line.context("no line found")?;
     Ok((file.to_string(), line))
 }
