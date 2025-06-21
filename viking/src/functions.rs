@@ -159,7 +159,7 @@ pub fn get_functions_for_path(csv_path: &Path) -> Result<Vec<Info>> {
 
     while reader.read_record(&mut record)? {
         let entry = parse_function_csv_entry(&record)
-            .with_context(|| format!("failed to parse CSV record at line {}", line_number))?;
+            .with_context(|| format!("failed to parse CSV record at line {line_number}"))?;
 
         if !entry.name.is_empty() {
             num_names += 1;

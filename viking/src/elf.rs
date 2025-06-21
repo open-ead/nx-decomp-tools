@@ -55,7 +55,7 @@ fn make_goblin_ctx() -> container::Ctx {
 /// A stripped down version of `goblin::elf::Elf::parse`, parsing only the sections that we need.
 ///
 /// *Warning*: In particular, `strtab`, `dynstrtab`, `soname` and `libraries` are **not** parsed.
-fn parse_elf_faster(bytes: &[u8]) -> Result<Elf> {
+fn parse_elf_faster(bytes: &[u8]) -> Result<Elf<'_>> {
     let header = Elf::parse_header(bytes)?;
     let mut elf = Elf::lazy_parse(header)?;
     let ctx = make_goblin_ctx();
@@ -182,7 +182,7 @@ pub fn find_function_symbol_by_name(elf: &OwnedElf, name: &str) -> Result<Sym> {
     bail!("unknown function")
 }
 
-pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName> {
+pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName<'_>> {
     let mut map = SymbolTableByName::with_capacity_and_hasher(
         elf.syms.iter().filter(filter_out_useless_syms).count(),
         Default::default(),
@@ -208,7 +208,7 @@ pub fn make_symbol_map_by_addr(elf: &OwnedElf) -> SymbolTableByAddr {
     map
 }
 
-pub fn make_addr_to_name_map(elf: &OwnedElf) -> Result<AddrToNameMap> {
+pub fn make_addr_to_name_map(elf: &OwnedElf) -> Result<AddrToNameMap<'_>> {
     let mut map = AddrToNameMap::with_capacity_and_hasher(
         elf.syms.iter().filter(filter_out_useless_syms).count(),
         Default::default(),
@@ -315,7 +315,7 @@ pub fn get_elf_bytes(elf: &OwnedElf, addr: u64, size: u64) -> Result<&[u8]> {
     Ok(&elf.as_owner().1[offset..(offset + size)])
 }
 
-pub fn get_function(elf: &OwnedElf, addr: u64, size: u64) -> Result<Function> {
+pub fn get_function(elf: &OwnedElf, addr: u64, size: u64) -> Result<Function<'_>> {
     Ok(Function {
         owner_elf: elf,
         addr,

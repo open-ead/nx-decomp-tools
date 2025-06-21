@@ -57,7 +57,7 @@ pub fn get_tools_path() -> Result<PathBuf> {
 
 fn get_version_specific_dir_path(dir_name: &str, version: Option<&str>) -> Result<PathBuf> {
     let dir_name = if let Some(v) = version {
-        format!("{}/{}", dir_name, v)
+        format!("{dir_name}/{v}")
     } else {
         dir_name.to_string()
     };
