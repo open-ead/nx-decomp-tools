@@ -140,8 +140,8 @@ impl std::fmt::Display for MismatchCause {
             Self::Register => write!(f, "wrong register"),
             Self::Mnemonic => write!(f, "wrong mnemonic"),
             Self::BranchTarget => write!(f, "wrong branch target"),
-            Self::FunctionCall(diff) => write!(f, "wrong function call\n{}", diff),
-            Self::DataReference(diff) => write!(f, "wrong data reference\n{}", diff),
+            Self::FunctionCall(diff) => write!(f, "wrong function call\n{diff}"),
+            Self::DataReference(diff) => write!(f, "wrong data reference\n{diff}"),
             Self::Immediate => write!(f, "wrong immediate"),
             Self::Unknown => write!(f, "unknown reason"),
         }

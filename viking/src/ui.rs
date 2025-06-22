@@ -40,7 +40,7 @@ pub fn format_symbol_name(name: &str) -> String {
 }
 
 pub fn format_address(addr: u64) -> String {
-    format!("{:#x}", addr).green().to_string()
+    format!("{addr:#x}").green().to_string()
 }
 
 pub fn print_detail(msg: &str) {
