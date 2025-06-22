@@ -127,14 +127,14 @@ fn parse_args() -> Result<Args, lexopt::Error> {
                 args.other_args.push(other_val.into_string()?);
             }
             Long(other_long) => {
-                args.other_args.push(format!("--{}", other_long));
+                args.other_args.push(format!("--{other_long}"));
                 let opt = parser.optional_value();
                 if let Some(o) = opt {
                     args.other_args.push(o.into_string()?);
                 }
             }
             Short(other_short) => {
-                args.other_args.push(format!("-{}", other_short));
+                args.other_args.push(format!("-{other_short}"));
             }
 
             _ => return Err(arg.unexpected()),
@@ -194,7 +194,7 @@ asm-differ arguments:"
         })
         .unwrap_or(&asm_differ_help);
 
-    println!("{}", asm_differ_arguments);
+    println!("{asm_differ_arguments}");
 
     Ok(())
 }
@@ -257,7 +257,7 @@ fn check_function(
 
             let result = checker
                 .check(cs, &orig_fn, &decomp_fn)
-                .with_context(|| format!("checking {}", name))?;
+                .with_context(|| format!("checking {name}"))?;
 
             if let Some(mismatch) = result {
                 let stderr = std::io::stderr();
@@ -269,7 +269,7 @@ fn check_function(
                         ui::format_symbol_name(name),
                     ),
                 );
-                ui::print_detail_ex(&mut lock, &format!("{}", mismatch));
+                ui::print_detail_ex(&mut lock, &mismatch.to_string());
                 return Ok(CheckResult::MismatchError);
             }
         }
@@ -282,7 +282,7 @@ fn check_function(
 
             let result = checker
                 .check(cs, &orig_fn, &decomp_fn)
-                .with_context(|| format!("checking {}", name))?;
+                .with_context(|| format!("checking {name}"))?;
 
             if result.is_none() {
                 ui::print_note(&format!(
@@ -343,7 +343,7 @@ fn check_single(
 
     let mut maybe_mismatch = checker
         .check(&mut make_cs()?, &orig_fn, &decomp_fn)
-        .with_context(|| format!("checking {}", name))?;
+        .with_context(|| format!("checking {name}"))?;
 
     let mut should_show_diff = args.always_diff;
 
@@ -544,7 +544,7 @@ fn resolve_unknown_fn_interactively(
 
         Ok(candidates[0].0.to_string())
     } else {
-        let prompt = format!("{} is ambiguous; did you mean:", ambiguous_name);
+        let prompt = format!("{ambiguous_name} is ambiguous; did you mean:");
         let options = candidates
             .iter()
             .map(|(&name, _)| ui::format_symbol_name(name))
@@ -626,7 +626,7 @@ fn rediff_function_after_differ(
 
     let maybe_mismatch = checker
         .check(&mut make_cs()?, orig_fn, &decomp_fn)
-        .with_context(|| format!("re-checking {}", name))?;
+        .with_context(|| format!("re-checking {name}"))?;
 
     if previous_check_result.is_some() == maybe_mismatch.is_some() {
         if let Some(mismatch) = &maybe_mismatch {
