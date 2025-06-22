@@ -104,9 +104,13 @@ fn try_find_function_from_ast_entity<'tu>(
         }
         let name = child.get_mangled_name();
         let range = child.get_range();
-        if name.is_none_or(|name| name.strip_prefix("_").unwrap_or(&name) != fn_name)
-            || !child.is_definition()
+        if !child.is_definition()
             || range.is_none()
+            || name.is_none_or(|name| {
+                // On some platfroms libclang mangled symbols have two underscores at the start instead
+                // of one
+                name.strip_prefix("_").unwrap_or(&name) != fn_name && name != fn_name
+            })
         {
             continue;
         }
