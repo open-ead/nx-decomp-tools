@@ -447,14 +447,16 @@ fn main() -> Result<()> {
         .as_ref()
         .context("decomp.me integration needs to be configured")?;
 
+    let version = args.version.as_deref();
+    let decomp_elf = elf::load_decomp_elf(version)?;
     let functions = functions::get_functions(args.version.as_deref())?;
+    let decomp_symtab = elf::make_symbol_map_by_name(&decomp_elf)?;
 
-    let function_info = ui::fuzzy_search_function_interactively(&functions, &args.function_name)?;
+    let function_info =
+        ui::fuzzy_search_function_interactively(&functions, &decomp_symtab, &args.function_name)?;
 
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
-    let version = args.version.as_deref();
-    let decomp_elf = elf::load_decomp_elf(version)?;
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;

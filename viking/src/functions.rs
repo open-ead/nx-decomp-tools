@@ -257,13 +257,13 @@ pub fn demangle_str(name: &str) -> Result<String> {
     Ok(symbol.demangle(&options)?)
 }
 
-pub fn fuzzy_search<'a>(functions: &'a [Info], name: &str) -> Vec<&'a Info> {
+pub fn fuzzy_search<'a>(functions: &[&'a Info], name: &str) -> Box<[&'a Info]> {
     let exact_match = functions
         .par_iter()
         .find_first(|function| function.name == name);
 
-    if let Some(exact_match) = exact_match {
-        return vec![exact_match];
+    if let Some(&exact_match) = exact_match {
+        return Box::from([exact_match]);
     }
 
     // Find all functions whose demangled name contains the specified string.
@@ -275,8 +275,9 @@ pub fn fuzzy_search<'a>(functions: &'a [Info], name: &str) -> Vec<&'a Info> {
             demangle_str(&function.name).is_ok_and(|demangled| demangled.contains(name))
                 || function.name.contains(name)
         })
+        .copied()
         .collect();
 
     candidates.sort_by_key(|info| info.addr);
-    candidates
+    candidates.into_boxed_slice()
 }

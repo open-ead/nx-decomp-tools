@@ -314,7 +314,8 @@ fn check_single(
     args: &Args,
 ) -> Result<()> {
     let version = args.get_version();
-    let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
+    let function =
+        ui::fuzzy_search_function_interactively(functions, checker.decomp_symtab, fn_to_check)?;
     let name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());

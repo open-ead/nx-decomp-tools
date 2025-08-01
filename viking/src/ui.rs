@@ -6,6 +6,7 @@ use std::io::StderrLock;
 use std::io::Write;
 use textwrap::indent;
 
+use crate::elf;
 use crate::functions;
 
 pub fn print_note(msg: &str) {
@@ -70,9 +71,14 @@ pub fn clear_terminal() {
 
 pub fn fuzzy_search_function_interactively<'a>(
     functions: &'a [functions::Info],
+    decomp_symtab: &elf::SymbolTableByName,
     name: &str,
 ) -> Result<&'a functions::Info> {
-    let candidates = functions::fuzzy_search(functions, name);
+    let existing_functions: Box<_> = functions
+        .iter()
+        .filter(|function| decomp_symtab.contains_key(function.name.as_str()))
+        .collect();
+    let candidates = functions::fuzzy_search(&existing_functions, name);
     match candidates[..] {
         [] => bail!("no match for {}", format_symbol_name(name)),
         [exact_match] => Ok(exact_match),
