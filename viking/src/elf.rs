@@ -351,23 +351,15 @@ pub fn find_file_and_line_by_symbol(
 ) -> Result<(String, u32)> {
     let symbol = find_function_symbol_by_name(elf, sym)?;
 
-    let frames = ctx.find_frames(symbol.st_value);
-
-    let frame = match frames {
-        LookupResult::Output(frames) => frames
-            .context("failed to parse dwarf")?
-            .last()
-            .context("no frame found")?
-            .context("frame is invalid")?,
-        LookupResult::Load {
-            load: _,
-            continuation: _,
-        } => {
-            return Err(anyhow!(
-                "unexpect LookupResult (maybe input elf has split dwarf?)"
-            ))
-        }
+    let LookupResult::Output(frames) = ctx.find_frames(symbol.st_value) else {
+        bail!("unexpect LookupResult (maybe input elf has split dwarf?)");
     };
+
+    let frame = frames
+        .context("failed to parse dwarf")?
+        .last()
+        .context("no frame found")?
+        .context("frame is invalid")?;
 
     // Grab the location of the last frame (we choose the last frame to ignore inline function frames).
     let loc = frame.location.context("no location found")?;

@@ -420,7 +420,7 @@ fn deduce_source_file_from_debug_info(
     function_name: &str,
 ) -> Result<String> {
     let ctx = elf::create_addr2line_ctx_for(decomp_elf)?;
-    let file = elf::find_file_and_line_by_symbol(decomp_elf, &ctx, function_name)?.0;
+    let (file, _) = elf::find_file_and_line_by_symbol(decomp_elf, &ctx, function_name)?;
 
     Ok(file)
 }

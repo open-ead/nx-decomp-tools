@@ -303,15 +303,13 @@ fn check_function(
                 ));
                 return Ok(CheckResult::MatchWarn);
             } else {
-                if let Some(ctx) = addr2line_ctx {
-                    if args.check_mismatch_comments {
-                        let (file, line) = elf::find_file_and_line_by_symbol(
-                            checker.decomp_elf,
-                            ctx,
-                            &function.name,
-                        )?;
-                        check_mismatch_comment(&file, line, &function.name)?;
-                    }
+                let ctx = addr2line_ctx.as_ref().context(
+                    "Addr2line context should not be None when checking mismatch comments",
+                )?;
+                if args.check_mismatch_comments {
+                    let (file, line) =
+                        elf::find_file_and_line_by_symbol(checker.decomp_elf, ctx, &function.name)?;
+                    check_mismatch_comment(&file, line, &function.name)?;
                 }
                 if function.status == Status::NotDecompiled {
                     ui::print_note(&format!(
@@ -730,10 +728,7 @@ fn check_mismatch_comment(
         .unwrap_or(file_path);
     if !function_signature_and_comments.contains("NON_MATCHING") {
         ui::print_warning(&format!("Function at line {} of {} mismatches and should have a `NON_MATCHING` comment above it with a `decomp.me` link", line, file_rel_path));
-        return Ok(());
-    }
-
-    if !function_signature_and_comments.contains("decomp.me") {
+    } else if !function_signature_and_comments.contains("decomp.me") {
         // Not the full https://decomp.me/scratch to allow for comments like "Same mismatch as above, no decomp.me needed"
         ui::print_warning(&format!(
             "NON_MATCHING comment for function at line {} of {} should have a `decomp.me` link",
