@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use addr2line::fallible_iterator::FallibleIterator;
-use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -331,57 +330,64 @@ fn create_scratch(
     source_code: &str,
     disassembly: &str,
 ) -> Result<FinalScratchUrl> {
-
-    // updated using objdiff at https://github.com/encounter/objdiff/blob/a367af612b8b30b5bdf40e5c1d0e45df46a5e3e9/objdiff/core/src/jobs/create_scratch.rs
-
-    let diff_flags = [format!("--disassemble={}", info.name.clone())];
-    let diff_flags = serde_json::to_string(&diff_flags)?;
-
-    let mut form = reqwest::blocking::multipart::Form::new()
-        .text("platform", "switch".to_string())
-        .text("name", demangled_name.to_owned())
-        .text("diff_label", info.name.clone())
-        .text("diff_flags", diff_flags)
-        .text("context", context.to_string())
-        .text("source_code", source_code.to_string())
-        .text("target_asm", disassembly.to_string());
-    if let Some(compiler) = &decomp_me_config.compiler_name {
-        form = form.text("compiler", compiler.to_string())
-    }
-    if let Some(compiler_flags) = flags {
-        form = form.text("compiler_flags", compiler_flags.to_string())
-    }
-    if let Some(preset) = &decomp_me_config.preset_id {
-        form = form.text("preset", preset.to_string());
-    }
-
     let client = reqwest::blocking::Client::new();
-    let response = client
+
+    #[derive(serde::Serialize)]
+    struct Data {
+        platform: String,
+        name: String,
+        target_asm: String,
+        source_code: String,
+        context: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diff_label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compiler: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compiler_flags: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        preset: Option<String>,
+    }
+
+    let show_name = if demangled_name.len() <= 222 {
+        demangled_name.to_owned()
+    } else {
+        info.name.clone()
+    };
+
+    let data = Data {
+        platform: "switch".to_string(),
+        name: show_name,
+        target_asm: disassembly.to_string(),
+        source_code: source_code.to_string(),
+        context: context.to_string(),
+        diff_label: Some(info.name.clone()),
+        compiler: decomp_me_config.compiler_name.clone(),
+        compiler_flags: flags.clone(),
+        preset: decomp_me_config.preset_id.clone(),
+    };
+
+    let res_text = client
         .post(format!("{}/api/scratch", &args.decomp_me_api))
         .json(&data)
         .send()?
         .text()?;
 
-    #[derive(serde::Deserialize)]
-    struct ResponseData {
-        slug: String,
-    }
-
-    let res = serde_json::from_str::<ResponseData>(&res_text);
+    let res = serde_json::from_str::<CreateScratchResponse>(&res_text);
 
     if let Some(error) = res.as_ref().err() {
         ui::print_error(&format!("failed to upload function: {error}"));
         ui::print_note(&format!(
             "server response:\n{}\n",
-            &response.text().unwrap_or_default().normal().yellow()
+            &res_text.normal().yellow()
         ));
         bail!("failed to upload function");
     }
 
-    let body: CreateScratchResponse = response.json().context("Failed to parse response")?;
+    let res_data = res.unwrap();
 
-    let __base_url = format!("{}/scratch/{}/", args.decomp_me_api, body.slug);
-    let __claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, body.slug, body.claim_token);
+    let __base_url = format!("{}/scratch/{}/", args.decomp_me_api, res_data.slug);
+    let __claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, res_data.slug, res_data.claim_token);
 
     Ok(FinalScratchUrl {
         base_url: __base_url,
@@ -590,9 +596,9 @@ fn main() -> Result<()> {
     .context("failed to create scratch")?;
 
     ui::print_note(&format!(
-        "created scratch for \'{}\'.\n\
-        Claim the scratch: {}\n\
-        Direct link (no claim): {}",
+        "created scratch for \'{}\'.\n\n\
+        Claim: {}\n\
+        Direct: {}",
         demangled_name.clone(),
         urls.claim_url.clone(),
         urls.base_url.clone(),
