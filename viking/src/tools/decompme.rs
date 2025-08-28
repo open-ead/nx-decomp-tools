@@ -321,7 +321,7 @@ fn get_translation_unit(
 
 /// Returns the URL of the scratch if successful.
 fn create_scratch(
-    demangled_name: &String,
+    demangled_name: &str,
     args: &Args,
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
@@ -386,12 +386,12 @@ fn create_scratch(
 
     let res_data = res.unwrap();
 
-    let __base_url = format!("{}/scratch/{}/", args.decomp_me_api, res_data.slug);
-    let __claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, res_data.slug, res_data.claim_token);
+    let base_url = format!("{}/scratch/{}/", args.decomp_me_api, res_data.slug);
+    let claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, res_data.slug, res_data.claim_token);
 
     Ok(FinalScratchUrl {
-        base_url: __base_url,
-        claim_url: __claim_url,
+        base_url: base_url,
+        claim_url: claim_url,
     })
 }
 
@@ -568,10 +568,10 @@ fn main() -> Result<()> {
 
     println!("context: {} lines", context.matches('\n').count());
     if let Some(flags_str) = flags.as_ref() {
-        println!("compile flags: {}", flags_str);
+        println!("compile flags: {flags_str}");
     }
     if let Some(preset_id) = decomp_me_config.preset_id.as_ref() {
-        println!("preset id: {}", preset_id);
+        println!("preset id: {preset_id}");
     }
 
     let confirm = inquire::Confirm::new("Upload?")
@@ -599,9 +599,9 @@ fn main() -> Result<()> {
         "created scratch for \'{}\'.\n\n\
         Claim: {}\n\
         Direct: {}",
-        demangled_name.clone(),
-        urls.claim_url.clone(),
-        urls.base_url.clone(),
+        demangled_name,
+        urls.claim_url,
+        urls.base_url
     ));
 
     Ok(())
