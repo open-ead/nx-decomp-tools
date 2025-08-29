@@ -325,7 +325,7 @@ fn create_scratch(
     args: &Args,
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
-    flags: &Option<String>,
+    flags: Option<&str>,
     context: &str,
     source_code: &str,
     disassembly: &str,
@@ -363,7 +363,7 @@ fn create_scratch(
         context: context.to_string(),
         diff_label: Some(info.name.clone()),
         compiler: decomp_me_config.compiler_name.clone(),
-        compiler_flags: flags.clone(),
+        compiler_flags: flags.map(|s| s.to_string()),
         preset: decomp_me_config.preset_id.clone(),
     };
 
@@ -588,7 +588,7 @@ fn main() -> Result<()> {
         &args,
         decomp_me_config,
         function_info,
-        &flags,
+        flags.as_deref(),
         &context,
         &source_code,
         &disassembly,
