@@ -303,10 +303,10 @@ fn check_function(
                 ));
                 return Ok(CheckResult::MatchWarn);
             } else {
-                let ctx = addr2line_ctx.as_ref().context(
-                    "Addr2line context should not be None when checking mismatch comments",
-                )?;
                 if args.check_mismatch_comments {
+                    let ctx = addr2line_ctx.as_ref().context(
+                        "Addr2line context should not be None when checking mismatch comments",
+                    )?;
                     let (file, line) =
                         elf::find_file_and_line_by_symbol(checker.decomp_elf, ctx, &function.name)?;
                     check_mismatch_comment(&file, line, &function.name)?;
@@ -450,8 +450,9 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
                 Ok(())
             });
 
-            if result.is_err() {
+            if let Err(e) = result {
                 failed.store(true, atomic::Ordering::Relaxed);
+                println!("Error while checking function {}: {e}", &function.name);
             }
         },
     );
