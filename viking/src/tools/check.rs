@@ -702,12 +702,21 @@ fn check_mismatch_comment(
         } else {
             function_symbol.to_string()
         };
-        // Get all content up from a point in the function signature until an empty line
-        let content_from_fn_signature = &content[..content
+
+        // Get all content up from the end of the line with the function signature until an empty line
+        let fn_signature_start_index = content
             .rfind(&format!("{function_name}("))
-            .unwrap_or(content.len() - 1)];
-        let start_index = content_from_fn_signature.rfind("\n\n").unwrap_or(0);
-        &content_from_fn_signature[start_index..]
+            .unwrap_or(content.len() - 1);
+
+        let fn_signature_line_end_index = content[fn_signature_start_index..]
+            .find("\n")
+            .unwrap_or(0)
+            + fn_signature_start_index;
+        let content_from_fn_signature_line_end = &content[..fn_signature_line_end_index];
+        let start_index = content_from_fn_signature_line_end
+            .rfind("\n\n")
+            .unwrap_or(0);
+        &content_from_fn_signature_line_end[start_index..]
     }
 
     let file = File::open(file_path)?;
