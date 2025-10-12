@@ -349,7 +349,7 @@ fn create_scratch(
         preset: Option<String>,
     }
 
-    let show_name = demangled_name.to_owned()
+    let show_name = demangled_name.to_owned();
 
     let data = Data {
         platform: "switch".to_string(),
@@ -386,8 +386,8 @@ fn create_scratch(
     let claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, res_data.slug, res_data.claim_token);
 
     Ok(FinalScratchUrl {
-        base_url: base_url,
-        claim_url: claim_url,
+        base_url,
+        claim_url,
     })
 }
 
