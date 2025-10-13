@@ -11,6 +11,9 @@ use rayon::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::env;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::sync::atomic;
 use std::sync::Mutex;
 use viking::checks::FunctionChecker;
@@ -32,6 +35,7 @@ struct Args {
     version: Option<String>,
     always_diff: bool,
     warnings_as_errors: bool,
+    check_mismatch_comments: bool,
     print_help: bool,
     other_args: Vec<String>,
 }
@@ -116,6 +120,10 @@ fn parse_args() -> Result<Args, lexopt::Error> {
                 args.warnings_as_errors = true;
             }
 
+            Long("check-mismatch-comments") => {
+                args.check_mismatch_comments = true;
+            }
+
             Long("help") | Short('h') => {
                 args.print_help = true;
             }
@@ -146,7 +154,7 @@ fn parse_args() -> Result<Args, lexopt::Error> {
 
 fn print_help() -> Result<()> {
     println!(
-"Usage: check [function name] [--version VERSION] [--always-diff] [asm-differ arguments]
+"Usage: check [function name] [--version VERSION] [--always-diff] [--warnings-as-errors] [--check-mismatch-comments] [asm-differ arguments]
 
 Checks if the compiled bytecode of a function matches the assembly found within the game elf. If not, show the differences between them.
 If no function name is provided, all functions within the repository function list will be checked.
@@ -156,6 +164,8 @@ optional arguments:
  -h, --help             Show this help message and exit
  --version VERSION      Check the function against version VERSION of the game elf
  --always-diff          Show an assembly diff, even if the function matches
+ --warnings-as-errors   Errors instead of printing a warning if a function can't be checked (mainly for CI)
+ --check-mismatch-comments   Checks that all mismatching functions have a NON_MATCHING comment with a decomp.me link above them
 All further arguments are forwarded onto asm-differ.
 
 asm-differ arguments:"
@@ -214,6 +224,7 @@ fn check_function(
     checker: &FunctionChecker,
     cs: &mut capstone::Capstone,
     function: &functions::Info,
+    addr2line_ctx: &Option<elf::Addr2LineContext>,
     args: &Args,
 ) -> Result<CheckResult> {
     let name = function.name.as_str();
@@ -291,13 +302,23 @@ fn check_function(
                     function.status.description(),
                 ));
                 return Ok(CheckResult::MatchWarn);
-            } else if function.status == Status::NotDecompiled {
-                ui::print_note(&format!(
-                    "function {} is marked as {} but mismatches",
-                    ui::format_symbol_name(name),
-                    function.status.description(),
-                ));
-                return Ok(CheckResult::MismatchWarn);
+            } else {
+                if args.check_mismatch_comments {
+                    let ctx = addr2line_ctx.as_ref().context(
+                        "Addr2line context should not be None when checking mismatch comments",
+                    )?;
+                    let (file, line) =
+                        elf::find_file_and_line_by_symbol(checker.decomp_elf, ctx, &function.name)?;
+                    check_mismatch_comment(&file, line, &function.name)?;
+                }
+                if function.status == Status::NotDecompiled {
+                    ui::print_note(&format!(
+                        "function {} is marked as {} but mismatches",
+                        ui::format_symbol_name(name),
+                        function.status.description(),
+                    ));
+                    return Ok(CheckResult::MismatchWarn);
+                }
             }
         }
 
@@ -392,35 +413,49 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
     let failed = atomic::AtomicBool::new(false);
     let new_function_statuses: Mutex<HashMap<u64, functions::Status>> = Mutex::new(HashMap::new());
 
-    functions.par_iter().for_each(|function| {
-        let result = CAPSTONE.with(|cs| -> Result<()> {
-            let mut cs = cs.borrow_mut();
-            let ok = check_function(checker, &mut cs, function, args)?;
-            match ok {
-                CheckResult::MismatchError => {
-                    failed.store(true, atomic::Ordering::Relaxed);
-                }
-                CheckResult::MatchWarn => {
-                    new_function_statuses
-                        .lock()
-                        .unwrap()
-                        .insert(function.addr, functions::Status::Matching);
-                }
-                CheckResult::MismatchWarn => {
-                    new_function_statuses
-                        .lock()
-                        .unwrap()
-                        .insert(function.addr, functions::Status::NonMatchingMajor);
-                }
-                CheckResult::Ok => {}
+    functions.par_iter().for_each_init(
+        || -> Option<elf::Addr2LineContext> {
+            if !args.check_mismatch_comments {
+                return None;
             }
-            Ok(())
-        });
+            // addr2line structs can't be safely shared between threads, so we create one context
+            // per thread (NOT per iteration)
+            let ctx = elf::create_addr2line_ctx_for(checker.decomp_elf).expect(
+                "The decomp elf should be valid, so creating an addr2line context should work",
+            );
+            Some(ctx)
+        },
+        |addr2line_ctx, function| {
+            let result = CAPSTONE.with(|cs| -> Result<()> {
+                let mut cs = cs.borrow_mut();
+                let ok = check_function(checker, &mut cs, function, addr2line_ctx, args)?;
+                match ok {
+                    CheckResult::MismatchError => {
+                        failed.store(true, atomic::Ordering::Relaxed);
+                    }
+                    CheckResult::MatchWarn => {
+                        new_function_statuses
+                            .lock()
+                            .unwrap()
+                            .insert(function.addr, functions::Status::Matching);
+                    }
+                    CheckResult::MismatchWarn => {
+                        new_function_statuses
+                            .lock()
+                            .unwrap()
+                            .insert(function.addr, functions::Status::NonMatchingMajor);
+                    }
+                    CheckResult::Ok => {}
+                }
+                Ok(())
+            });
 
-        if result.is_err() {
-            failed.store(true, atomic::Ordering::Relaxed);
-        }
-    });
+            if let Err(e) = result {
+                failed.store(true, atomic::Ordering::Relaxed);
+                println!("Error while checking function {}: {e}", &function.name);
+            }
+        },
+    );
 
     update_function_statuses(
         functions,
@@ -644,4 +679,72 @@ fn rediff_function_after_differ(
     }
 
     Ok(maybe_mismatch)
+}
+
+fn check_mismatch_comment(
+    file_path: &str,
+    line: u32,
+    function_symbol: &str,
+) -> std::io::Result<()> {
+    fn rfind_function_metadata_block<'a>(function_symbol: &str, content: &'a str) -> &'a str {
+        let function_name = if let Ok(demangled_name) = functions::demangle_str(function_symbol) {
+            // Extract the function name from the damngled name (removing the function params and
+            // any extra namespaces)
+            let function_name_and_namespace = demangled_name
+                .split_once("(")
+                .expect("Demangled function names should always have an opening parenthesis")
+                .0;
+            function_name_and_namespace
+                .rsplit_once("::")
+                .map(|v| v.1)
+                .unwrap_or(function_name_and_namespace)
+                .to_string()
+        } else {
+            function_symbol.to_string()
+        };
+
+        // Get all content up from the end of the line with the function signature until an empty line
+        let fn_signature_start_index = content
+            .rfind(&format!("{function_name}("))
+            .unwrap_or(content.len() - 1);
+
+        let fn_signature_line_end_index = content[fn_signature_start_index..]
+            .find("\n")
+            .unwrap_or(0)
+            + fn_signature_start_index;
+        let content_from_fn_signature_line_end = &content[..fn_signature_line_end_index];
+        let start_index = content_from_fn_signature_line_end
+            .rfind("\n\n")
+            .unwrap_or(0);
+        &content_from_fn_signature_line_end[start_index..]
+    }
+
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+
+    let lines = reader
+        .lines()
+        .take(line as usize)
+        .collect::<Result<Vec<_>, _>>()?;
+    let content = lines.join("\n");
+
+    let function_signature_and_comments = rfind_function_metadata_block(function_symbol, &content);
+    let cwd = env::current_dir()?;
+    let cwd_str = cwd
+        .to_str()
+        .expect("The current work dir should always be valid as a str");
+    let file_rel_path = file_path
+        .strip_prefix(&format!("{cwd_str}/"))
+        .unwrap_or(file_path);
+    if !function_signature_and_comments.contains("NON_MATCHING") {
+        ui::print_warning(&format!("Function at line {} of {} mismatches and should have a `NON_MATCHING` comment above it with a `decomp.me` link", line, file_rel_path));
+    } else if !function_signature_and_comments.contains("decomp.me") {
+        // Not the full https://decomp.me/scratch to allow for comments like "Same mismatch as above, no decomp.me needed"
+        ui::print_warning(&format!(
+            "NON_MATCHING comment for function at line {} of {} should have a `decomp.me` link",
+            line, file_rel_path
+        ));
+    }
+
+    Ok(())
 }
