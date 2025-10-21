@@ -37,6 +37,18 @@ struct Args {
     function_name: String,
 }
 
+#[derive(Debug, Default, Clone, serde::Deserialize)]
+struct CreateScratchResponse {
+    pub slug: String,
+    pub claim_token: String,
+}
+
+#[derive(Debug, Default, Clone)]
+struct FinalScratchUrl {
+    pub base_url: String,
+    pub claim_url: String,
+}
+
 fn load_compilation_database(args: &Args) -> Result<json_compilation_db::Entries> {
     let mut path;
     if let Some(p) = args.compilation_database.as_ref() {
@@ -308,37 +320,46 @@ fn get_translation_unit(
 
 /// Returns the URL of the scratch if successful.
 fn create_scratch(
+    demangled_name: &str,
     args: &Args,
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
-    flags: &str,
+    flags: Option<&str>,
     context: &str,
     source_code: &str,
     disassembly: &str,
-) -> Result<String> {
+) -> Result<FinalScratchUrl> {
     let client = reqwest::blocking::Client::new();
 
     #[derive(serde::Serialize)]
     struct Data {
-        compiler: String,
-        compiler_flags: String,
         platform: String,
         name: String,
-        diff_label: Option<String>,
         target_asm: String,
         source_code: String,
         context: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diff_label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compiler: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compiler_flags: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        preset: Option<String>,
     }
 
+    let show_name = demangled_name.to_owned();
+
     let data = Data {
-        compiler: decomp_me_config.compiler_name.clone(),
-        compiler_flags: flags.to_string(),
         platform: "switch".to_string(),
-        name: info.name.clone(),
-        diff_label: Some(info.name.clone()),
+        name: show_name,
         target_asm: disassembly.to_string(),
         source_code: source_code.to_string(),
         context: context.to_string(),
+        diff_label: Some(info.name.clone()),
+        compiler: decomp_me_config.compiler_name.clone(),
+        compiler_flags: flags.map(|s| s.to_string()),
+        preset: decomp_me_config.preset_id.clone(),
     };
 
     let res_text = client
@@ -347,12 +368,7 @@ fn create_scratch(
         .send()?
         .text()?;
 
-    #[derive(serde::Deserialize)]
-    struct ResponseData {
-        slug: String,
-    }
-
-    let res = serde_json::from_str::<ResponseData>(&res_text);
+    let res = serde_json::from_str::<CreateScratchResponse>(&res_text);
 
     if let Some(error) = res.as_ref().err() {
         ui::print_error(&format!("failed to upload function: {error}"));
@@ -365,7 +381,13 @@ fn create_scratch(
 
     let res_data = res.unwrap();
 
-    Ok(format!("{}/scratch/{}", args.decomp_me_api, res_data.slug))
+    let base_url = format!("{}/scratch/{}/", args.decomp_me_api, res_data.slug);
+    let claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, res_data.slug, res_data.claim_token);
+
+    Ok(FinalScratchUrl {
+        base_url,
+        claim_url,
+    })
 }
 
 // Reimplement fmt::Display to use relative offsets rather than absolute addresses for labels.
@@ -438,6 +460,8 @@ fn main() -> Result<()> {
 
     let function_info = ui::fuzzy_search_function_interactively(&functions, &args.function_name)?;
 
+    let demangled_name = functions::demangle_str(&function_info.name)?;
+
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
     let version = args.version.as_deref();
@@ -503,16 +527,35 @@ fn main() -> Result<()> {
             true
         });
 
-        flags = command.join(" ");
-        flags += " -x c++";
+        if decomp_me_config.override_compile_flags.unwrap_or(true) && flags.is_some() {
+            flags = Some(format!("{} -x c++", command.join(" ")));
+
+        }
     } else {
         ui::print_warning(
             "consider passing -s [.cpp source] so that the context can be automatically filled",
         );
     }
 
+    if decomp_me_config.compiler_name.is_none() && decomp_me_config.preset_id.is_none() {
+        ui::print_error("please specify either: \n- preset_id (You can get it from https://decomp.me/preset or suggest a new one via github issues) \nor \n- compiler_name and\n- default_compile_flags");
+        ui::print_error(
+            "please specify either: \n\
+            - preset_id (You can get it from https://decomp.me/preset or suggest a new one via github issues)\n\
+            or\n\
+            - compiler_name and\n\
+            - default_compile_flags"
+        );
+        bail!("missing required configuration");
+    }
+
     println!("context: {} lines", context.matches('\n').count());
-    println!("compile flags: {}", &flags.dimmed());
+    if let Some(flags_str) = flags.as_ref() {
+        println!("compile flags: {flags_str}");
+    }
+    if let Some(preset_id) = decomp_me_config.preset_id.as_ref() {
+        println!("preset id: {preset_id}");
+    }
 
     let confirm = inquire::Confirm::new("Upload?")
         .with_default(true)
@@ -523,18 +566,26 @@ fn main() -> Result<()> {
 
     println!("uploading...");
 
-    let url = create_scratch(
+    let urls = create_scratch(
+        &demangled_name,
         &args,
         decomp_me_config,
         function_info,
-        &flags,
+        flags.as_deref(),
         &context,
         &source_code,
         &disassembly,
     )
     .context("failed to create scratch")?;
 
-    ui::print_note(&format!("created scratch: {}", &url));
+    ui::print_note(&format!(
+        "created scratch for \'{}\'.\n\n\
+        Claim: {}\n\
+        Direct: {}",
+        demangled_name,
+        urls.claim_url,
+        urls.base_url
+    ));
 
     Ok(())
 }
