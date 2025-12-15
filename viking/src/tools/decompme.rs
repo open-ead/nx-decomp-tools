@@ -382,7 +382,10 @@ fn create_scratch(
     let res_data = res.unwrap();
 
     let base_url = format!("{}/scratch/{}/", args.decomp_me_api, res_data.slug);
-    let claim_url = format!("{}/scratch/{}/claim?token={}", args.decomp_me_api, res_data.slug, res_data.claim_token);
+    let claim_url = format!(
+        "{}/scratch/{}/claim?token={}",
+        args.decomp_me_api, res_data.slug, res_data.claim_token
+    );
 
     Ok(FinalScratchUrl {
         base_url,
@@ -456,16 +459,19 @@ fn main() -> Result<()> {
         .as_ref()
         .context("decomp.me integration needs to be configured")?;
 
-    let functions = functions::get_functions(args.version.as_deref())?;
+    let version = args.version.as_deref();
+    let decomp_elf = elf::load_decomp_elf(version)?;
+    let functions = functions::get_functions(version)?;
+    let decomp_symtab = elf::make_symbol_map_by_name(&decomp_elf)?;
 
-    let function_info = ui::fuzzy_search_function_interactively(&functions, &args.function_name)?;
+    let filtered_functions = functions::filter_candidates_by_symtab(&functions, &decomp_symtab);
+    let function_info =
+        ui::fuzzy_search_function_interactively(&filtered_functions, &args.function_name)?;
 
     let demangled_name = functions::demangle_str(&function_info.name)?;
 
     eprintln!("{}", ui::format_symbol_name(&function_info.name).bold());
 
-    let version = args.version.as_deref();
-    let decomp_elf = elf::load_decomp_elf(version)?;
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
@@ -529,7 +535,6 @@ fn main() -> Result<()> {
 
         if decomp_me_config.override_compile_flags.unwrap_or(true) && flags.is_some() {
             flags = Some(format!("{} -x c++", command.join(" ")));
-
         }
     } else {
         ui::print_warning(
@@ -582,9 +587,7 @@ fn main() -> Result<()> {
         "created scratch for \'{}\'.\n\n\
         Claim: {}\n\
         Direct: {}",
-        demangled_name,
-        urls.claim_url,
-        urls.base_url
+        demangled_name, urls.claim_url, urls.base_url
     ));
 
     Ok(())

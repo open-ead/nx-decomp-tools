@@ -335,7 +335,9 @@ fn check_single(
     args: &Args,
 ) -> Result<()> {
     let version = args.get_version();
-    let function = ui::fuzzy_search_function_interactively(functions, fn_to_check)?;
+    let filtered_functions =
+        functions::filter_candidates_by_symtab(functions, checker.decomp_symtab);
+    let function = ui::fuzzy_search_function_interactively(&filtered_functions, fn_to_check)?;
     let name = function.name.as_str();
 
     eprintln!("{}", ui::format_symbol_name(name).bold());
@@ -708,10 +710,8 @@ fn check_mismatch_comment(
             .rfind(&format!("{function_name}("))
             .unwrap_or(content.len() - 1);
 
-        let fn_signature_line_end_index = content[fn_signature_start_index..]
-            .find("\n")
-            .unwrap_or(0)
-            + fn_signature_start_index;
+        let fn_signature_line_end_index =
+            content[fn_signature_start_index..].find("\n").unwrap_or(0) + fn_signature_start_index;
         let content_from_fn_signature_line_end = &content[..fn_signature_line_end_index];
         let start_index = content_from_fn_signature_line_end
             .rfind("\n\n")
