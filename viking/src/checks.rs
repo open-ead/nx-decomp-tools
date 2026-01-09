@@ -131,6 +131,7 @@ pub enum MismatchCause {
     DataReference(ReferenceDiff),
     Immediate,
     Unknown,
+    InternalError(String),
 }
 
 impl std::fmt::Display for MismatchCause {
@@ -144,6 +145,7 @@ impl std::fmt::Display for MismatchCause {
             Self::DataReference(diff) => write!(f, "wrong data reference\n{diff}"),
             Self::Immediate => write!(f, "wrong immediate"),
             Self::Unknown => write!(f, "unknown reason"),
+            Self::InternalError(msg) => write!(f, "internal error: {}", msg),
         }
     }
 }
@@ -415,19 +417,58 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         Ok(None)
     }
 
+    fn plt_name_to_addr(elf: &elf::OwnedElf, func_name: &str) -> Option<u64> {
+        // find plt relocation for given function name
+        let (reloc_idx, _) = elf.pltrelocs.iter().enumerate().find(|(_, reloc)| {
+            elf.dynsyms.get(reloc.r_sym).map(|s| elf.dynstrtab.get_at(s.st_name)).flatten() == Some(func_name)
+        })?;
+
+        let plt_section = elf::find_section(elf, ".plt").ok()?;
+        Some(plt_section.sh_addr + (reloc_idx as u64 + 2) * 0x10)
+    }
+
+    fn plt_addr_to_name(elf: &elf::OwnedElf, addr: u64) -> Option<&str> {
+        let plt_section = elf::find_section(elf, ".plt").ok()?;
+        let reloc_idx = (addr - plt_section.sh_addr) / 16 - 2;
+        let reloc = elf.pltrelocs.get(reloc_idx as usize)?;
+        let name = elf.dynstrtab.get_at(elf.dynsyms.get(reloc.r_sym)?.st_name)?;
+        Some(name)
+    }
+
     /// Returns None on success and a MismatchCause on failure.
     fn check_function_call(&self, orig_addr: u64, decomp_addr: u64) -> Option<MismatchCause> {
-        let info = *self.known_functions.get(&orig_addr)?;
+        let Some(info) = self.known_functions.get(&orig_addr) else {
+            return Some(MismatchCause::InternalError(
+                format!("failed to resolve orig function at address {:x}", orig_addr)
+            ))
+        };
         let name = info.name.as_str();
-        let decomp_symbol = self.decomp_symtab.get(name)?;
-        let expected = decomp_symbol.st_value;
-
-        if decomp_addr == expected {
-            None
-        } else {
+        if name.is_empty() {
+            // called some function that is not named in the binary or function list
             let actual_symbol_name = self.translate_decomp_addr_to_name(decomp_addr);
+            return Some(MismatchCause::FunctionCall(ReferenceDiff {
+                referenced_symbol: orig_addr,
+                expected_ref_in_decomp: 0,
+                actual_ref_in_decomp: decomp_addr,
+                expected_symbol_name: "<unnamed function>".to_string(),
+                actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
+            }))
+        }
+        let Some(expected) = self.decomp_symtab.get(name).map(|sym| sym.st_value)
+                .or_else(|| Self::plt_name_to_addr(self.decomp_elf, name)) else {
+            let actual_symbol_name = self.translate_decomp_addr_to_name(decomp_addr);
+            return Some(MismatchCause::FunctionCall(ReferenceDiff {
+                referenced_symbol: orig_addr,
+                expected_ref_in_decomp: 0,
+                actual_ref_in_decomp: decomp_addr,
+                expected_symbol_name: name.to_string(),
+                actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
+            }))
+        };
 
-            Some(MismatchCause::FunctionCall(ReferenceDiff {
+        if decomp_addr != expected {
+            let actual_symbol_name = self.translate_decomp_addr_to_name(decomp_addr);
+            return Some(MismatchCause::FunctionCall(ReferenceDiff {
                 referenced_symbol: orig_addr,
                 expected_ref_in_decomp: expected,
                 actual_ref_in_decomp: decomp_addr,
@@ -435,6 +476,8 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
                 actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
             }))
         }
+
+        None
     }
 
     /// Returns None on success and a MismatchCause on failure.
@@ -511,6 +554,6 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
             let map = elf::make_addr_to_name_map(self.decomp_elf).ok();
             map.unwrap_or_default()
         });
-        map.get(&decomp_addr).copied()
+        map.get(&decomp_addr).copied().or_else(|| Self::plt_addr_to_name(self.decomp_elf, decomp_addr))
     }
 }
