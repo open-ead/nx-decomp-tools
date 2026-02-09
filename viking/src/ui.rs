@@ -69,7 +69,7 @@ pub fn clear_terminal() {
 }
 
 pub fn fuzzy_search_function_interactively<'a>(
-    functions: &'a [functions::Info],
+    functions: &[&'a functions::Info],
     name: &str,
 ) -> Result<&'a functions::Info> {
     let candidates = functions::fuzzy_search(functions, name);

@@ -1,4 +1,4 @@
-use crate::repo;
+use crate::{elf, repo};
 use anyhow::{bail, ensure, Context, Result};
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -257,12 +257,12 @@ pub fn demangle_str(name: &str) -> Result<String> {
     Ok(symbol.demangle(&options)?)
 }
 
-pub fn fuzzy_search<'a>(functions: &'a [Info], name: &str) -> Vec<&'a Info> {
+pub fn fuzzy_search<'a>(functions: &[&'a Info], name: &str) -> Vec<&'a Info> {
     let exact_match = functions
         .par_iter()
         .find_first(|function| function.name == name);
 
-    if let Some(exact_match) = exact_match {
+    if let Some(&exact_match) = exact_match {
         return vec![exact_match];
     }
 
@@ -275,8 +275,19 @@ pub fn fuzzy_search<'a>(functions: &'a [Info], name: &str) -> Vec<&'a Info> {
             demangle_str(&function.name).is_ok_and(|demangled| demangled.contains(name))
                 || function.name.contains(name)
         })
+        .copied()
         .collect();
 
     candidates.sort_by_key(|info| info.addr);
     candidates
+}
+
+pub fn filter_candidates_by_symtab<'a>(
+    candidates: &'a [Info],
+    decomp_symtab: &elf::SymbolTableByName,
+) -> Vec<&'a Info> {
+    candidates
+        .iter()
+        .filter(|function| decomp_symtab.contains_key(function.name.as_str()))
+        .collect()
 }
