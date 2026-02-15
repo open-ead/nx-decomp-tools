@@ -65,22 +65,25 @@ fn main() -> Result<()> {
     let mut decomp_symtab = None;
     let mut decomp_glob_data_table = None;
     let mut functions = None;
+    let mut plt_functions = None;
 
     rayon::scope(|s| {
         s.spawn(|_| decomp_symtab = Some(elf::make_symbol_map_by_name(&decomp_elf)));
         s.spawn(|_| decomp_glob_data_table = Some(elf::build_glob_data_table(&decomp_elf)));
         s.spawn(|_| functions = Some(functions::get_functions(version)));
+        s.spawn(|_| plt_functions = Some(elf::get_plt_functions(&orig_elf)));
     });
 
     let decomp_symtab = decomp_symtab
         .unwrap()
         .context("failed to make symbol map")?;
-
     let decomp_glob_data_table = decomp_glob_data_table
         .unwrap()
         .context("failed to make global data table")?;
 
     let functions = functions.unwrap().context("failed to load function CSV")?;
+    let plt_functions = plt_functions.unwrap().context("failed to load plt functions")?;
+    let functions = vec![functions, plt_functions].concat();
 
     let checker = FunctionChecker::new(
         &orig_elf,
