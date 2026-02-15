@@ -22,7 +22,7 @@ use memmap::{Mmap, MmapOptions};
 use owning_ref::OwningHandle;
 use rustc_hash::FxHashMap;
 
-use crate::{repo, functions::{AddressLabel, Info, Status}};
+use crate::{repo, functions::{Info, Status}};
 
 pub type OwnedElf = OwningHandle<Box<(File, Mmap)>, Box<Elf<'static>>>;
 pub type SymbolTableByName<'a> = HashMap<&'a str, goblin::elf::Sym>;
@@ -312,8 +312,8 @@ pub fn get_plt_functions(elf: &OwnedElf) -> Result<Vec<crate::functions::Info>> 
         let sym = elf.dynsyms.get(reloc.r_sym).context("Failed to get dynsym")?;
         let name = elf.dynstrtab.get_at(sym.st_name).context("Failed to get dynstr")?;
         functions.push(Info {
-            offset: addr as u32, size: 0x10, label: AddressLabel::Single(name.to_string()), 
-            status: Status::Library, lazy: false, guess: false,
+            addr: addr, size: 0x10, name: name.to_string(), 
+            status: Status::Library,
         });
     }
 

@@ -172,6 +172,7 @@ pub struct FunctionChecker<'a, 'functions, 'orig_elf, 'decomp_elf> {
     pub decomp_elf: &'decomp_elf elf::OwnedElf,
     pub decomp_symtab: &'a elf::SymbolTableByName<'decomp_elf>,
     decomp_glob_data_table: elf::GlobDataTable,
+    decomp_plt_section: Option<&'decomp_elf goblin::elf::SectionHeader>,
 
     // Optional, only initialized when a mismatch is detected.
     decomp_addr_to_name_map: Lazy<elf::AddrToNameMap<'decomp_elf>>,
@@ -199,12 +200,14 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
 
         let known_functions = functions::make_known_function_map(functions);
 
+        let decomp_plt_section = elf::find_section(decomp_elf, ".plt").ok();
         let orig_got_section = elf::find_section(orig_elf, ".got").ok();
 
         Ok(FunctionChecker {
             decomp_elf,
             decomp_symtab,
             decomp_glob_data_table,
+            decomp_plt_section,
             decomp_addr_to_name_map: Lazy::new(),
 
             known_data_symbols,
@@ -437,7 +440,16 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
 
     /// Returns None on success and a MismatchCause on failure.
     fn check_function_call(&self, orig_addr: u64, decomp_addr: u64) -> Option<MismatchCause> {
+        if !repo::get_config().check_unimplemented_references.unwrap_or(true) {
+            // 0x10 = size of one plt entry
+            if elf::is_in_section(self.decomp_plt_section?, decomp_addr, 0x10) {
+                // we are deliberately ignoring PLT references, so do not check their target
+                return None;
+            }
+        }
+
         let Some(info) = self.known_functions.get(&orig_addr) else {
+            // should not happen, but loudly complain (and only fail single function) if it still happens
             return Some(MismatchCause::InternalError(
                 format!("failed to resolve orig function at address {:x}", orig_addr)
             ))

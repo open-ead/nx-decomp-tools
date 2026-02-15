@@ -83,7 +83,7 @@ fn main() -> Result<()> {
 
     let functions = functions.unwrap().context("failed to load function CSV")?;
     let plt_functions = plt_functions.unwrap().context("failed to load plt functions")?;
-    let functions = vec![file_functions, plt_functions].concat();
+    let functions = vec![functions, plt_functions].concat();
 
     let checker = FunctionChecker::new(
         &orig_elf,
