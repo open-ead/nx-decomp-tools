@@ -33,7 +33,7 @@ impl KnownDataSymbolMap {
 
     fn load(&mut self, csv_path: &Path, decomp_symtab: &elf::SymbolTableByName) -> Result<()> {
         let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
+            .has_headers(true)
             .quoting(false)
             .from_path(csv_path)?;
         for (line, maybe_record) in reader.records().enumerate() {
