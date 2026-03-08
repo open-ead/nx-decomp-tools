@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+import time
+from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 
@@ -13,12 +15,69 @@ assert (PROJECT_ROOT / "tools" / "config.toml").exists(), f"config.toml not foun
 
 _ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
+_AUTONOMY_CACHE = {
+    "mtime": None,
+    "text": ""
+}
+
+def _read_autonomy_message() -> str:
+    path = Path.home() / "autonomy_message.txt"
+
+    if not path.exists():
+        return ""
+
+    stat = path.stat()
+
+    if _AUTONOMY_CACHE["mtime"] != stat.st_mtime:
+        _AUTONOMY_CACHE["mtime"] = stat.st_mtime
+        _AUTONOMY_CACHE["text"] = path.read_text()
+
+    return _AUTONOMY_CACHE["text"]
+
+def _build_autonomy_block() -> str:
+    text = _read_autonomy_message().strip()
+    if not text:
+        return ""
+
+    ts = datetime.now(timezone.utc).isoformat()
+
+    return (
+        "=== AUTONOMY MESSAGE BEGIN ===\n"
+        "source: ~/autonomy_message.txt\n"
+        f"timestamp: {ts}\n\n"
+        f"{text}\n\n"
+        "=== AUTONOMY MESSAGE END ===\n\n"
+    )
+
 def _run(args: list[str], timeout: int) -> str:
     print(f"[nx-decomp-tools] {' '.join(args)}", file=sys.stderr, flush=True)
-    result = subprocess.run(args, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
-    output = _ANSI_ESCAPE.sub("", result.stdout + result.stderr)
-    print(f"[nx-decomp-tools] exit {result.returncode}, {len(output)} chars", file=sys.stderr, flush=True)
-    return output
+
+    result = subprocess.run(
+        args,
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+    tool_output = _ANSI_ESCAPE.sub("", result.stdout + result.stderr)
+
+    autonomy_block = _build_autonomy_block()
+
+    final_output = (
+        f"{autonomy_block}"
+        "=== TOOL OUTPUT BEGIN ===\n"
+        f"{tool_output}\n"
+        "=== TOOL OUTPUT END ===\n"
+    )
+
+    print(
+        f"[nx-decomp-tools] exit {result.returncode}, {len(final_output)} chars",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    return final_output
 
 mcp = FastMCP("nx-decomp-tools")
 
