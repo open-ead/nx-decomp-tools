@@ -83,20 +83,20 @@ fn main() -> Result<()> {
 
     let functions = functions.unwrap().context("failed to load function CSV")?;
     let plt_functions = plt_functions.unwrap().context("failed to load plt functions")?;
-    let functions = vec![functions, plt_functions].concat();
+    let all_functions = vec![functions.clone(), plt_functions].concat();
 
     let checker = FunctionChecker::new(
         &orig_elf,
         &decomp_elf,
         &decomp_symtab,
         decomp_glob_data_table,
-        &functions,
+        &all_functions,
         version,
     )
     .context("failed to construct FunctionChecker")?;
 
     if let Some(func) = &args.function {
-        check_single(&checker, &functions, func, &args)?;
+        check_single(&checker, &functions, &all_functions, func, &args)?;
     } else {
         check_all(&checker, &functions, &args)?;
     }
@@ -334,6 +334,7 @@ fn check_function(
 fn check_single(
     checker: &FunctionChecker,
     functions: &[functions::Info],
+    all_functions: &[functions::Info],
     fn_to_check: &str,
     args: &Args,
 ) -> Result<()> {
@@ -384,7 +385,7 @@ fn check_single(
         show_asm_differ(function, name, &args.other_args, version)?;
 
         maybe_mismatch =
-            rediff_function_after_differ(functions, &orig_fn, name, &maybe_mismatch, version)
+            rediff_function_after_differ(all_functions, &orig_fn, name, &maybe_mismatch, version)
                 .context("failed to rediff")?;
     }
 
