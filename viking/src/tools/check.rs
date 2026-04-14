@@ -65,35 +65,38 @@ fn main() -> Result<()> {
     let mut decomp_symtab = None;
     let mut decomp_glob_data_table = None;
     let mut functions = None;
+    let mut plt_functions = None;
 
     rayon::scope(|s| {
         s.spawn(|_| decomp_symtab = Some(elf::make_symbol_map_by_name(&decomp_elf)));
         s.spawn(|_| decomp_glob_data_table = Some(elf::build_glob_data_table(&decomp_elf)));
         s.spawn(|_| functions = Some(functions::get_functions(version)));
+        s.spawn(|_| plt_functions = Some(elf::get_plt_functions(&orig_elf)));
     });
 
     let decomp_symtab = decomp_symtab
         .unwrap()
         .context("failed to make symbol map")?;
-
     let decomp_glob_data_table = decomp_glob_data_table
         .unwrap()
         .context("failed to make global data table")?;
 
     let functions = functions.unwrap().context("failed to load function CSV")?;
+    let plt_functions = plt_functions.unwrap().context("failed to load plt functions")?;
+    let all_functions = vec![functions.clone(), plt_functions].concat();
 
     let checker = FunctionChecker::new(
         &orig_elf,
         &decomp_elf,
         &decomp_symtab,
         decomp_glob_data_table,
-        &functions,
+        &all_functions,
         version,
     )
     .context("failed to construct FunctionChecker")?;
 
     if let Some(func) = &args.function {
-        check_single(&checker, &functions, func, &args)?;
+        check_single(&checker, &functions, &all_functions, func, &args)?;
     } else {
         check_all(&checker, &functions, &args)?;
     }
@@ -331,6 +334,7 @@ fn check_function(
 fn check_single(
     checker: &FunctionChecker,
     functions: &[functions::Info],
+    all_functions: &[functions::Info],
     fn_to_check: &str,
     args: &Args,
 ) -> Result<()> {
@@ -381,7 +385,7 @@ fn check_single(
         show_asm_differ(function, name, &args.other_args, version)?;
 
         maybe_mismatch =
-            rediff_function_after_differ(functions, &orig_fn, name, &maybe_mismatch, version)
+            rediff_function_after_differ(all_functions, &orig_fn, name, &maybe_mismatch, version)
                 .context("failed to rediff")?;
     }
 
