@@ -324,7 +324,8 @@ fn create_scratch(
     args: &Args,
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
-    flags: Option<&str>,
+    compiler_flags: Option<&str>,
+    diff_flags: &Vec<String>,
     context: &str,
     source_code: &str,
     disassembly: &str,
@@ -346,6 +347,7 @@ fn create_scratch(
         compiler_flags: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         preset: Option<String>,
+        diff_flags: Vec<String>,
     }
 
     let show_name = demangled_name.to_owned();
@@ -358,8 +360,9 @@ fn create_scratch(
         context: context.to_string(),
         diff_label: Some(info.name.clone()),
         compiler: decomp_me_config.compiler_name.clone(),
-        compiler_flags: flags.map(|s| s.to_string()),
+        compiler_flags: compiler_flags.map(|s| s.to_string()),
         preset: decomp_me_config.preset_id.clone(),
+        diff_flags: diff_flags.to_vec(),
     };
 
     let res_text = client
@@ -475,8 +478,9 @@ fn main() -> Result<()> {
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
+    let function_offset=function_info.addr;
 
-    let mut flags = decomp_me_config.default_compile_flags.clone();
+    let mut compiler_flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
 
     // Fill in compile flags and the context using the compilation database
@@ -485,6 +489,8 @@ fn main() -> Result<()> {
         .source_file
         .clone()
         .or_else(|| deduce_source_file_from_debug_info(&decomp_elf, &function_info.name).ok());
+
+    let diff_flags = vec![format!("--adjust-vma={:#x}", function_offset)];
 
     let mut source_code = String::new();
     if let Some(source_file) = source_file.as_deref() {
@@ -533,8 +539,8 @@ fn main() -> Result<()> {
             true
         });
 
-        if decomp_me_config.override_compile_flags.unwrap_or(true) && flags.is_some() {
-            flags = Some(format!("{} -x c++", command.join(" ")));
+        if decomp_me_config.override_compile_flags.unwrap_or(true) && compiler_flags.is_some() {
+            compiler_flags = Some(format!("{} -x c++", command.join(" ")));
         }
     } else {
         ui::print_warning(
@@ -555,12 +561,13 @@ fn main() -> Result<()> {
     }
 
     println!("context: {} lines", context.matches('\n').count());
-    if let Some(flags_str) = flags.as_ref() {
+    if let Some(flags_str) = compiler_flags.as_ref() {
         println!("compile flags: {flags_str}");
     }
     if let Some(preset_id) = decomp_me_config.preset_id.as_ref() {
         println!("preset id: {preset_id}");
     }
+    println!("offset: {:#x}", function_offset);
 
     let confirm = inquire::Confirm::new("Upload?")
         .with_default(true)
@@ -576,7 +583,8 @@ fn main() -> Result<()> {
         &args,
         decomp_me_config,
         function_info,
-        flags.as_deref(),
+        compiler_flags.as_deref(),
+        &diff_flags,
         &context,
         &source_code,
         &disassembly,
