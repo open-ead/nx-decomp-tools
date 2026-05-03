@@ -325,7 +325,7 @@ fn create_scratch(
     decomp_me_config: &repo::ConfigDecompMe,
     info: &functions::Info,
     compiler_flags: Option<&str>,
-    diff_flags: &Vec<String>,
+    diff_flags: &[String],
     context: &str,
     source_code: &str,
     disassembly: &str,
@@ -478,7 +478,7 @@ fn main() -> Result<()> {
     let orig_elf = elf::load_orig_elf(version)?;
     let function = elf::get_function(&orig_elf, function_info.addr, function_info.size as u64)?;
     let disassembly = get_disassembly(function_info, &function)?;
-    let function_offset=function_info.addr;
+    let function_offset = function_info.addr;
 
     let mut compiler_flags = decomp_me_config.default_compile_flags.clone();
     let mut context = "".to_string();
