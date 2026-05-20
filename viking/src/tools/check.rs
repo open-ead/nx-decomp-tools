@@ -66,12 +66,16 @@ fn main() -> Result<()> {
     let mut decomp_glob_data_table = None;
     let mut functions = None;
     let mut plt_functions = None;
+    let mut orig_dynsym = None;
+    let mut decomp_dynsym = None;
 
     rayon::scope(|s| {
         s.spawn(|_| decomp_symtab = Some(elf::make_symbol_map_by_name(&decomp_elf)));
         s.spawn(|_| decomp_glob_data_table = Some(elf::build_glob_data_table(&decomp_elf)));
         s.spawn(|_| functions = Some(functions::get_functions(version)));
         s.spawn(|_| plt_functions = Some(elf::get_plt_functions(&orig_elf)));
+        s.spawn(|_| orig_dynsym = Some(elf::make_dynsym_map_by_name(&orig_elf)));
+        s.spawn(|_| decomp_dynsym = Some(elf::make_dynsym_map_by_name(&decomp_elf)));
     });
 
     let decomp_symtab = decomp_symtab
@@ -83,6 +87,15 @@ fn main() -> Result<()> {
 
     let functions = functions.unwrap().context("failed to load function CSV")?;
     let plt_functions = plt_functions.unwrap().context("failed to load plt functions")?;
+
+    let orig_dynsym = orig_dynsym
+        .unwrap()
+        .context("failed to make original ELF dynsym map")?;
+
+    let decomp_dynsym = decomp_dynsym
+        .unwrap()
+        .context("failed to make decomp ELF dynsym map")?;
+
     let all_functions = vec![functions.clone(), plt_functions].concat();
 
     let checker = FunctionChecker::new(
@@ -97,10 +110,15 @@ fn main() -> Result<()> {
 
     if let Some(func) = &args.function {
         check_single(&checker, &functions, &all_functions, func, &args)?;
-    } else {
-        check_all(&checker, &functions, &args)?;
+        return Ok(())
+
     }
 
+    check_all(&checker, &all_functions, &args)?;
+
+    check_symbols(&orig_dynsym, &decomp_dynsym)?;
+
+    eprintln!("{}", "OK".green().bold());
     Ok(())
 }
 
@@ -473,7 +491,6 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
     if failed.load(atomic::Ordering::Relaxed) {
         bail!("found at least one error");
     } else {
-        eprintln!("{}", "OK".green().bold());
         Ok(())
     }
 }
@@ -751,4 +768,97 @@ fn check_mismatch_comment(
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub enum SymbolMismatchCause {
+    // st_size
+    Size(u64, u64),
+    // st_info
+    Bind(u8, u8),
+    Type(u8, u8),
+    // st_other
+    Visibility(u8, u8),
+}
+
+impl std::fmt::Display for SymbolMismatchCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match &self {
+            Self::Size(_, _) => "Size",
+            Self::Bind(_, _) => "Bind",
+            Self::Type(_, _) => "Type",
+            Self::Visibility(_, _) => "Visibility",
+        };
+        let orig = match &self {
+            Self::Size(orig_size, _) => orig_size.to_string(),
+            Self::Bind(orig_bind, _) => goblin::elf::sym::bind_to_str(*orig_bind).to_string(),
+            Self::Type(orig_type, _) => goblin::elf::sym::type_to_str(*orig_type).to_string(),
+            Self::Visibility(orig_vis, _) => goblin::elf::sym::visibility_to_str(*orig_vis).to_string(),
+        };
+        let decomp = match &self {
+            Self::Size(_, decomp_size) => decomp_size.to_string(),
+            Self::Bind(_, decomp_bind) => goblin::elf::sym::bind_to_str(*decomp_bind).to_string(),
+            Self::Type(_, decomp_type) => goblin::elf::sym::type_to_str(*decomp_type).to_string(),
+            Self::Visibility(_, decomp_vis) => goblin::elf::sym::visibility_to_str(*decomp_vis).to_string(),
+        };
+        write!(
+            f,
+            "incorrect {name}; expected to see {orig}\n\
+            --> decomp contains {decomp} instead",
+            name = name,
+            orig = orig,
+            decomp = decomp,
+        )
+    }
+}
+
+fn check_symbols(
+    orig_dynsym: &elf::SymbolTableByName,
+    decomp_dynsym: &elf::SymbolTableByName,
+) -> Result<()> {
+
+    let mut mismatching = false;
+
+    for (name, symbol) in orig_dynsym.iter() {
+        let Some(decomp_symbol) = decomp_dynsym.get(name) else {
+            continue;
+        };
+
+        if let Some(mismatch) = check_symbol(symbol, decomp_symbol)? {
+            mismatching = true;
+            ui::print_error(&format!(
+                "symbol {} is different between the original and decomp ELF:\n{}",
+                ui::format_symbol_name(name),
+                mismatch
+            ));
+        }
+    }
+
+    if mismatching {
+        bail!("found at least one error");
+    } else {
+        Ok(())
+    }
+}
+
+pub fn check_symbol(symbol: &goblin::elf::Sym, decomp_symbol: &goblin::elf::Sym) -> Result<Option<SymbolMismatchCause>> {
+    // mismatching function size will cause issues in FunctionChecker already, so ignore here
+    if symbol.st_size != decomp_symbol.st_size && !symbol.is_function() {
+        return Ok(Some(SymbolMismatchCause::Size(symbol.st_size, decomp_symbol.st_size)))
+    }
+
+    // st_info
+    if symbol.st_bind() != decomp_symbol.st_bind() {
+        return Ok(Some(SymbolMismatchCause::Bind(symbol.st_bind(), decomp_symbol.st_bind())))
+    }
+    if symbol.st_type() != decomp_symbol.st_type() {
+        return Ok(Some(SymbolMismatchCause::Type(symbol.st_type(), decomp_symbol.st_type())))
+    }
+
+    // st_other
+    if symbol.st_visibility() != decomp_symbol.st_visibility() {
+        return Ok(Some(SymbolMismatchCause::Visibility(symbol.st_visibility(), decomp_symbol.st_visibility())))
+    }
+
+    Ok(None)
 }

@@ -138,10 +138,10 @@ pub struct SymbolStringTable<'elf> {
 }
 
 impl<'elf> SymbolStringTable<'elf> {
-    pub fn from_elf(elf: &'elf OwnedElf) -> Result<Self> {
+    pub fn from_elf(elf: &'elf OwnedElf, sh_type: u32) -> Result<Self> {
         let bytes = &*elf.as_owner().1;
         for shdr in &elf.section_headers {
-            if shdr.sh_type == section_header::SHT_SYMTAB {
+            if shdr.sh_type == sh_type {
                 let table_hdr = elf
                     .section_headers
                     .get(shdr.sh_link as usize)
@@ -182,14 +182,14 @@ pub fn is_undefined_sym(sym: &Sym) -> bool {
 }
 
 pub fn find_function_symbol_by_name(elf: &OwnedElf, name: &str) -> Result<Sym> {
-    let strtab = SymbolStringTable::from_elf(elf)?;
+    let strtab = SymbolStringTable::from_elf(elf, section_header::SHT_SYMTAB)?;
 
     for symbol in elf.syms.iter().filter(filter_out_useless_syms) {
         if name == strtab.get_string(symbol.st_name) {
             return Ok(symbol);
         }
     }
-    bail!("unknown function")
+    bail!("Unknown function: {:?}", name)
 }
 
 pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName<'_>> {
@@ -198,9 +198,24 @@ pub fn make_symbol_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName<'_>> 
         Default::default(),
     );
 
-    let strtab = SymbolStringTable::from_elf(elf)?;
+    let strtab = SymbolStringTable::from_elf(elf, section_header::SHT_SYMTAB)?;
 
     for symbol in elf.syms.iter().filter(filter_out_useless_syms) {
+        map.entry(strtab.get_string(symbol.st_name))
+            .or_insert(symbol);
+    }
+    Ok(map)
+}
+
+pub fn make_dynsym_map_by_name(elf: &OwnedElf) -> Result<SymbolTableByName<'_>> {
+    let mut map = SymbolTableByName::with_capacity_and_hasher(
+        elf.dynsyms.iter().filter(filter_out_useless_syms).count(),
+        Default::default(),
+    );
+
+    let strtab = SymbolStringTable::from_elf(elf, section_header::SHT_DYNSYM)?;
+
+    for symbol in elf.dynsyms.iter().filter(filter_out_useless_syms) {
         map.entry(strtab.get_string(symbol.st_name))
             .or_insert(symbol);
     }
@@ -224,7 +239,7 @@ pub fn make_addr_to_name_map(elf: &OwnedElf) -> Result<AddrToNameMap<'_>> {
         Default::default(),
     );
 
-    let strtab = SymbolStringTable::from_elf(elf)?;
+    let strtab = SymbolStringTable::from_elf(elf, section_header::SHT_SYMTAB)?;
 
     for symbol in elf.syms.iter().filter(filter_out_useless_syms) {
         map.entry(symbol.st_value)
