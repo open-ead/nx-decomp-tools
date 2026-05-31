@@ -82,7 +82,9 @@ fn main() -> Result<()> {
         .context("failed to make global data table")?;
 
     let functions = functions.unwrap().context("failed to load function CSV")?;
-    let plt_functions = plt_functions.unwrap().context("failed to load plt functions")?;
+    let plt_functions = plt_functions
+        .unwrap()
+        .context("failed to load plt functions")?;
     let all_functions = vec![functions.clone(), plt_functions].concat();
 
     let checker = FunctionChecker::new(

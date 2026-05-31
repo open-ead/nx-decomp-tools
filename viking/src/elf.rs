@@ -22,7 +22,10 @@ use memmap::{Mmap, MmapOptions};
 use owning_ref::OwningHandle;
 use rustc_hash::FxHashMap;
 
-use crate::{repo, functions::{Info, Status}};
+use crate::{
+    functions::{Info, Status},
+    repo,
+};
 
 pub type OwnedElf = OwningHandle<Box<(File, Mmap)>, Box<Elf<'static>>>;
 pub type SymbolTableByName<'a> = HashMap<&'a str, goblin::elf::Sym>;
@@ -102,7 +105,8 @@ fn parse_elf_faster(bytes: &[u8]) -> Result<Elf<'_>> {
         let hash_offset = dyn_info.hash.context("no hash")? as usize;
         // number of symbols (entries in .hash section) is stored at offset 4
         // (https://github.com/m4b/goblin/blob/86de3b4b04c49e2f80ec9ebd8f60c059b7213fb7/src/elf/mod.rs#L519)
-        let num_syms = u32::from_le_bytes(bytes[hash_offset+4..hash_offset+8].try_into()?) as usize;
+        let num_syms =
+            u32::from_le_bytes(bytes[hash_offset + 4..hash_offset + 8].try_into()?) as usize;
         elf.dynsyms = Symtab::parse(bytes, dyn_info.symtab, num_syms, ctx)?;
 
         elf.dynstrtab = Strtab::parse(bytes, dyn_info.strtab, dyn_info.strsz, 0x0)?;
@@ -312,10 +316,18 @@ pub fn get_plt_functions(elf: &OwnedElf) -> Result<Vec<crate::functions::Info>> 
     for (idx, reloc) in elf.pltrelocs.iter().enumerate() {
         // each PLT entry is 0x10 bytes, and the first (reserved) entry is twice the size
         let addr = plt_section.sh_addr + (idx as u64 + 2) * 0x10;
-        let sym = elf.dynsyms.get(reloc.r_sym).context("Failed to get dynsym")?;
-        let name = elf.dynstrtab.get_at(sym.st_name).context("Failed to get dynstr")?;
+        let sym = elf
+            .dynsyms
+            .get(reloc.r_sym)
+            .context("Failed to get dynsym")?;
+        let name = elf
+            .dynstrtab
+            .get_at(sym.st_name)
+            .context("Failed to get dynstr")?;
         functions.push(Info {
-            addr: addr, size: 0x10, name: name.to_string(), 
+            addr: addr,
+            size: 0x10,
+            name: name.to_string(),
             status: Status::Library,
         });
     }
@@ -398,7 +410,11 @@ pub fn find_file_and_line_by_symbol(
 pub fn plt_name_to_addr(elf: &OwnedElf, func_name: &str) -> Option<u64> {
     // find plt relocation for given function name
     let reloc_idx = elf.pltrelocs.iter().position(|reloc| {
-        elf.dynsyms.get(reloc.r_sym).map(|s| elf.dynstrtab.get_at(s.st_name)).flatten() == Some(func_name)
+        elf.dynsyms
+            .get(reloc.r_sym)
+            .map(|s| elf.dynstrtab.get_at(s.st_name))
+            .flatten()
+            == Some(func_name)
     })?;
 
     let plt_section = find_section(elf, ".plt").ok()?;
@@ -409,6 +425,8 @@ pub fn plt_addr_to_name(elf: &OwnedElf, addr: u64) -> Option<&str> {
     let plt_section = find_section(elf, ".plt").ok()?;
     let reloc_idx = (addr - plt_section.sh_addr) / 16 - 2;
     let reloc = elf.pltrelocs.get(reloc_idx as usize)?;
-    let name = elf.dynstrtab.get_at(elf.dynsyms.get(reloc.r_sym)?.st_name)?;
+    let name = elf
+        .dynstrtab
+        .get_at(elf.dynsyms.get(reloc.r_sym)?.st_name)?;
     Some(name)
 }

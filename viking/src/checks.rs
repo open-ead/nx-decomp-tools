@@ -98,7 +98,7 @@ fn get_data_symbol_csv_path(version: Option<&str>) -> Result<PathBuf> {
 #[derive(Debug)]
 pub struct ReferenceDiff {
     pub referenced_symbol: u64,
-    pub expected_ref_in_decomp: u64,
+    pub expected_ref_in_decomp: Option<u64>,
     pub actual_ref_in_decomp: u64,
 
     pub expected_symbol_name: String,
@@ -107,17 +107,25 @@ pub struct ReferenceDiff {
 
 impl std::fmt::Display for ReferenceDiff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "incorrect reference; expected to see {ref} {ref_name}\n\
-            --> decomp source code is referencing {actual} {actual_name}\n\
-            --> expected to see {expected} to match original code",
+        writeln!(f,
+            "incorrect reference; expected to see {ref} {ref_name}",
             ref=ui::format_address(self.referenced_symbol),
             ref_name=ui::format_symbol_name(&self.expected_symbol_name),
-            expected=ui::format_address(self.expected_ref_in_decomp),
-            actual=ui::format_address(self.actual_ref_in_decomp),
-            actual_name=ui::format_symbol_name(&self.actual_symbol_name),
-        )
+        )?;
+        writeln!(
+            f,
+            "--> decomp source code is referencing {actual} {actual_name}",
+            actual = ui::format_address(self.actual_ref_in_decomp),
+            actual_name = ui::format_symbol_name(&self.actual_symbol_name),
+        )?;
+        if let Some(expected) = self.expected_ref_in_decomp {
+            writeln!(
+                f,
+                "--> expected to see {expected} to match original code",
+                expected = ui::format_address(expected),
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -422,7 +430,10 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
 
     /// Returns None on success and a MismatchCause on failure.
     fn check_function_call(&self, orig_addr: u64, decomp_addr: u64) -> Option<MismatchCause> {
-        if !repo::get_config().check_unimplemented_references.unwrap_or(true) {
+        if !repo::get_config()
+            .check_unimplemented_references
+            .unwrap_or(true)
+        {
             // 0x10 = size of one plt entry
             if elf::is_in_section(self.decomp_plt_section?, decomp_addr, 0x10) {
                 // we are deliberately ignoring PLT references, so do not check their target
@@ -432,9 +443,10 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
 
         let Some(info) = self.known_functions.get(&orig_addr) else {
             // should not happen, but loudly complain (and only fail single function) if it still happens
-            return Some(MismatchCause::InternalError(
-                format!("failed to resolve orig function at address {:x}", orig_addr)
-            ))
+            return Some(MismatchCause::InternalError(format!(
+                "failed to resolve orig function at address {:x}",
+                orig_addr
+            )));
         };
         let name = info.name.as_str();
         if name.is_empty() {
@@ -442,33 +454,37 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
             let actual_symbol_name = self.translate_decomp_addr_to_name(decomp_addr);
             return Some(MismatchCause::FunctionCall(ReferenceDiff {
                 referenced_symbol: orig_addr,
-                expected_ref_in_decomp: 0,
+                expected_ref_in_decomp: None,
                 actual_ref_in_decomp: decomp_addr,
                 expected_symbol_name: "<unnamed function>".to_string(),
                 actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
-            }))
+            }));
         }
-        let Some(expected) = self.decomp_symtab.get(name).map(|sym| sym.st_value)
-                .or_else(|| elf::plt_name_to_addr(self.decomp_elf, name)) else {
+        let Some(expected) = self
+            .decomp_symtab
+            .get(name)
+            .map(|sym| sym.st_value)
+            .or_else(|| elf::plt_name_to_addr(self.decomp_elf, name))
+        else {
             let actual_symbol_name = self.translate_decomp_addr_to_name(decomp_addr);
             return Some(MismatchCause::FunctionCall(ReferenceDiff {
                 referenced_symbol: orig_addr,
-                expected_ref_in_decomp: 0,
+                expected_ref_in_decomp: None,
                 actual_ref_in_decomp: decomp_addr,
                 expected_symbol_name: name.to_string(),
                 actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
-            }))
+            }));
         };
 
         if decomp_addr != expected {
             let actual_symbol_name = self.translate_decomp_addr_to_name(decomp_addr);
             return Some(MismatchCause::FunctionCall(ReferenceDiff {
                 referenced_symbol: orig_addr,
-                expected_ref_in_decomp: expected,
+                expected_ref_in_decomp: Some(expected),
                 actual_ref_in_decomp: decomp_addr,
                 expected_symbol_name: name.to_string(),
                 actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
-            }))
+            }));
         }
 
         None
@@ -491,7 +507,7 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
 
             Some(MismatchCause::DataReference(ReferenceDiff {
                 referenced_symbol: orig_addr,
-                expected_ref_in_decomp: expected,
+                expected_ref_in_decomp: Some(expected),
                 actual_ref_in_decomp: decomp_addr,
                 expected_symbol_name: symbol.name.to_string(),
                 actual_symbol_name: actual_symbol_name.unwrap_or("unknown").to_string(),
@@ -548,6 +564,8 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
             let map = elf::make_addr_to_name_map(self.decomp_elf).ok();
             map.unwrap_or_default()
         });
-        map.get(&decomp_addr).copied().or_else(|| elf::plt_addr_to_name(self.decomp_elf, decomp_addr))
+        map.get(&decomp_addr)
+            .copied()
+            .or_else(|| elf::plt_addr_to_name(self.decomp_elf, decomp_addr))
     }
 }
