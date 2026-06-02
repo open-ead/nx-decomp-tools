@@ -14,19 +14,22 @@ ROOT = Path(__file__).parent.parent.parent
 def get_target_path(version = config.get_default_version()):
     return config.get_versioned_data_path(version) / "main.nso"
 
+def get_uncompressed_target_path(version = config.get_default_version()):
+    return config.get_versioned_data_path(version) / "main.uncompressed.nso"
+
 def get_target_elf_path(version = config.get_default_version()):
     return config.get_versioned_data_path(version) / "main.elf"
-
 
 def fail(error: str):
     print(">>> " + error)
     sys.exit(1)
 
-def _convert_nso_to_elf(nso_path: Path, export_uncompressed_nso=True):
+def _convert_nso_to_elf(nso_path: Path, elf_out_path = get_target_elf_path(), uncompressed_nso_out_path = get_uncompressed_target_path()):
     print(">>>> converting NSO to ELF...")
-    command = [tools.find_tool("nx2elf"), str(nso_path)];
-    if export_uncompressed_nso:
+    command = [tools.find_tool("nx2elf"), str(nso_path), "--export-elf", elf_out_path];
+    if uncompressed_nso_out_path is not None:
         command.append("--export-uncompressed")
+        command.append(uncompressed_nso_out_path)
     subprocess.check_call(command)
 
 
