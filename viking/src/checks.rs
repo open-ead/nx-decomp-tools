@@ -551,3 +551,68 @@ impl<'a, 'functions, 'orig_elf, 'decomp_elf>
         map.get(&decomp_addr).copied().or_else(|| elf::plt_addr_to_name(self.decomp_elf, decomp_addr))
     }
 }
+
+
+#[derive(Debug)]
+pub enum SymbolMismatchCause {
+    // st_size
+    Size(u64, u64),
+    // st_info
+    Bind(u8, u8),
+    Type(u8, u8),
+    // st_other
+    Visibility(u8, u8),
+}
+
+impl std::fmt::Display for SymbolMismatchCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match &self {
+            Self::Size(_, _) => "Size",
+            Self::Bind(_, _) => "Bind",
+            Self::Type(_, _) => "Type",
+            Self::Visibility(_, _) => "Visibility",
+        };
+        let orig = match &self {
+            Self::Size(orig_size, _) => orig_size.to_string(),
+            Self::Bind(orig_bind, _) => goblin::elf::sym::bind_to_str(*orig_bind).to_string(),
+            Self::Type(orig_type, _) => goblin::elf::sym::type_to_str(*orig_type).to_string(),
+            Self::Visibility(orig_vis, _) => goblin::elf::sym::visibility_to_str(*orig_vis).to_string(),
+        };
+        let decomp = match &self {
+            Self::Size(_, decomp_size) => decomp_size.to_string(),
+            Self::Bind(_, decomp_bind) => goblin::elf::sym::bind_to_str(*decomp_bind).to_string(),
+            Self::Type(_, decomp_type) => goblin::elf::sym::type_to_str(*decomp_type).to_string(),
+            Self::Visibility(_, decomp_vis) => goblin::elf::sym::visibility_to_str(*decomp_vis).to_string(),
+        };
+        write!(
+            f,
+            "incorrect {name}; expected to see {orig}\n\
+            --> decomp contains {decomp} instead",
+            name = name,
+            orig = orig,
+            decomp = decomp,
+        )
+    }
+}
+
+pub fn check_symbol(symbol: &goblin::elf::Sym, decomp_symbol: &goblin::elf::Sym) -> Result<Option<SymbolMismatchCause>> {
+    // mismatching function size will cause issues in FunctionChecker already, so ignore here
+    if symbol.st_size != decomp_symbol.st_size && !symbol.is_function() {
+        return Ok(Some(SymbolMismatchCause::Size(symbol.st_size, decomp_symbol.st_size)))
+    }
+
+    // st_info
+    if symbol.st_bind() != decomp_symbol.st_bind() {
+        return Ok(Some(SymbolMismatchCause::Bind(symbol.st_bind(), decomp_symbol.st_bind())))
+    }
+    if symbol.st_type() != decomp_symbol.st_type() {
+        return Ok(Some(SymbolMismatchCause::Type(symbol.st_type(), decomp_symbol.st_type())))
+    }
+
+    // st_other
+    if symbol.st_visibility() != decomp_symbol.st_visibility() {
+        return Ok(Some(SymbolMismatchCause::Visibility(symbol.st_visibility(), decomp_symbol.st_visibility())))
+    }
+
+    Ok(None)
+}

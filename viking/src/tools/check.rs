@@ -8,6 +8,7 @@ use goblin::elf::sym::STT_FUNC;
 use itertools::Itertools;
 use lexopt::prelude::*;
 use rayon::prelude::*;
+use viking::checks::check_symbol;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -772,48 +773,6 @@ fn check_mismatch_comment(
     Ok(())
 }
 
-#[derive(Debug)]
-pub enum SymbolMismatchCause {
-    // st_size
-    Size(u64, u64),
-    // st_info
-    Bind(u8, u8),
-    Type(u8, u8),
-    // st_other
-    Visibility(u8, u8),
-}
-
-impl std::fmt::Display for SymbolMismatchCause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match &self {
-            Self::Size(_, _) => "Size",
-            Self::Bind(_, _) => "Bind",
-            Self::Type(_, _) => "Type",
-            Self::Visibility(_, _) => "Visibility",
-        };
-        let orig = match &self {
-            Self::Size(orig_size, _) => orig_size.to_string(),
-            Self::Bind(orig_bind, _) => goblin::elf::sym::bind_to_str(*orig_bind).to_string(),
-            Self::Type(orig_type, _) => goblin::elf::sym::type_to_str(*orig_type).to_string(),
-            Self::Visibility(orig_vis, _) => goblin::elf::sym::visibility_to_str(*orig_vis).to_string(),
-        };
-        let decomp = match &self {
-            Self::Size(_, decomp_size) => decomp_size.to_string(),
-            Self::Bind(_, decomp_bind) => goblin::elf::sym::bind_to_str(*decomp_bind).to_string(),
-            Self::Type(_, decomp_type) => goblin::elf::sym::type_to_str(*decomp_type).to_string(),
-            Self::Visibility(_, decomp_vis) => goblin::elf::sym::visibility_to_str(*decomp_vis).to_string(),
-        };
-        write!(
-            f,
-            "incorrect {name}; expected to see {orig}\n\
-            --> decomp contains {decomp} instead",
-            name = name,
-            orig = orig,
-            decomp = decomp,
-        )
-    }
-}
-
 fn check_symbols(
     orig_dynsym: &elf::SymbolTableByName,
     decomp_dynsym: &elf::SymbolTableByName,
@@ -841,26 +800,4 @@ fn check_symbols(
     } else {
         Ok(())
     }
-}
-
-pub fn check_symbol(symbol: &goblin::elf::Sym, decomp_symbol: &goblin::elf::Sym) -> Result<Option<SymbolMismatchCause>> {
-    // mismatching function size will cause issues in FunctionChecker already, so ignore here
-    if symbol.st_size != decomp_symbol.st_size && !symbol.is_function() {
-        return Ok(Some(SymbolMismatchCause::Size(symbol.st_size, decomp_symbol.st_size)))
-    }
-
-    // st_info
-    if symbol.st_bind() != decomp_symbol.st_bind() {
-        return Ok(Some(SymbolMismatchCause::Bind(symbol.st_bind(), decomp_symbol.st_bind())))
-    }
-    if symbol.st_type() != decomp_symbol.st_type() {
-        return Ok(Some(SymbolMismatchCause::Type(symbol.st_type(), decomp_symbol.st_type())))
-    }
-
-    // st_other
-    if symbol.st_visibility() != decomp_symbol.st_visibility() {
-        return Ok(Some(SymbolMismatchCause::Visibility(symbol.st_visibility(), decomp_symbol.st_visibility())))
-    }
-
-    Ok(None)
 }
