@@ -118,7 +118,9 @@ fn main() -> Result<()> {
 
     check_all(&checker, &all_functions, &args)?;
 
-    check_symbols(&orig_dynsym, &decomp_dynsym)?;
+    if repo::get_config().check_symbols.unwrap_or(true) {
+        check_symbols(&orig_dynsym, &decomp_dynsym)?;
+    }
 
     eprintln!("{}", "OK".green().bold());
     Ok(())

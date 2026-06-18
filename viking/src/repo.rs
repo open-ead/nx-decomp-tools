@@ -9,6 +9,7 @@ pub struct Config {
     pub default_version: Option<String>,
     pub decomp_me: Option<ConfigDecompMe>,
     pub check_unimplemented_references: Option<bool>,
+    pub check_symbols: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]
