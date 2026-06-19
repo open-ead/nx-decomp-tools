@@ -8,6 +8,7 @@ use goblin::elf::sym::STT_FUNC;
 use itertools::Itertools;
 use lexopt::prelude::*;
 use rayon::prelude::*;
+use viking::checks::check_symbol;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -66,12 +67,16 @@ fn main() -> Result<()> {
     let mut decomp_glob_data_table = None;
     let mut functions = None;
     let mut plt_functions = None;
+    let mut orig_dynsym = None;
+    let mut decomp_dynsym = None;
 
     rayon::scope(|s| {
         s.spawn(|_| decomp_symtab = Some(elf::make_symbol_map_by_name(&decomp_elf)));
         s.spawn(|_| decomp_glob_data_table = Some(elf::build_glob_data_table(&decomp_elf)));
         s.spawn(|_| functions = Some(functions::get_functions(version)));
         s.spawn(|_| plt_functions = Some(elf::get_plt_functions(&orig_elf)));
+        s.spawn(|_| orig_dynsym = Some(elf::make_dynsym_map_by_name(&orig_elf)));
+        s.spawn(|_| decomp_dynsym = Some(elf::make_dynsym_map_by_name(&decomp_elf)));
     });
 
     let decomp_symtab = decomp_symtab
@@ -85,6 +90,15 @@ fn main() -> Result<()> {
     let plt_functions = plt_functions
         .unwrap()
         .context("failed to load plt functions")?;
+    
+    let orig_dynsym = orig_dynsym
+        .unwrap()
+        .context("failed to make original ELF dynsym map")?;
+
+    let decomp_dynsym = decomp_dynsym
+        .unwrap()
+        .context("failed to make decomp ELF dynsym map")?;
+
     let all_functions = vec![functions.clone(), plt_functions].concat();
 
     let checker = FunctionChecker::new(
@@ -99,10 +113,17 @@ fn main() -> Result<()> {
 
     if let Some(func) = &args.function {
         check_single(&checker, &functions, &all_functions, func, &args)?;
-    } else {
-        check_all(&checker, &functions, &args)?;
+        return Ok(())
+
     }
 
+    check_all(&checker, &all_functions, &args)?;
+
+    if repo::get_config().check_symbols.unwrap_or(true) {
+        check_symbols(&orig_dynsym, &decomp_dynsym)?;
+    }
+
+    eprintln!("{}", "OK".green().bold());
     Ok(())
 }
 
@@ -475,7 +496,6 @@ fn check_all(checker: &FunctionChecker, functions: &[functions::Info], args: &Ar
     if failed.load(atomic::Ordering::Relaxed) {
         bail!("found at least one error");
     } else {
-        eprintln!("{}", "OK".green().bold());
         Ok(())
     }
 }
@@ -753,4 +773,33 @@ fn check_mismatch_comment(
     }
 
     Ok(())
+}
+
+fn check_symbols(
+    orig_dynsym: &elf::SymbolTableByName,
+    decomp_dynsym: &elf::SymbolTableByName,
+) -> Result<()> {
+
+    let mut mismatching = false;
+
+    for (name, symbol) in orig_dynsym.iter() {
+        let Some(decomp_symbol) = decomp_dynsym.get(name) else {
+            continue;
+        };
+
+        if let Some(mismatch) = check_symbol(symbol, decomp_symbol)? {
+            mismatching = true;
+            ui::print_error(&format!(
+                "symbol {} is different between the original and decomp ELF:\n{}",
+                ui::format_symbol_name(name),
+                mismatch
+            ));
+        }
+    }
+
+    if mismatching {
+        bail!("found at least one error");
+    } else {
+        Ok(())
+    }
 }
