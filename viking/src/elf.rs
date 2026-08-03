@@ -102,11 +102,57 @@ fn parse_elf_faster(bytes: &[u8]) -> Result<Elf<'_>> {
         elf.pltrelocs =
             RelocSection::parse(bytes, dyn_info.jmprel, dyn_info.pltrelsz, is_rela, ctx)?;
 
-        let hash_offset = dyn_info.hash.context("no hash")? as usize;
-        // number of symbols (entries in .hash section) is stored at offset 4
-        // (https://github.com/m4b/goblin/blob/86de3b4b04c49e2f80ec9ebd8f60c059b7213fb7/src/elf/mod.rs#L519)
-        let num_syms =
-            u32::from_le_bytes(bytes[hash_offset + 4..hash_offset + 8].try_into()?) as usize;
+        let num_syms;
+
+        if let Some(hash_offset) = dyn_info.hash {
+            // See https://github.com/m4b/goblin/blob/86de3b4b04c49e2f80ec9ebd8f60c059b7213fb7/src/elf/mod.rs#L519
+
+            let hash_offset = hash_offset as usize;
+            num_syms = u32::from_le_bytes(bytes[hash_offset + 4..hash_offset + 8].try_into()?) as usize;
+        }
+        else if let Some(hash_offset) = dyn_info.gnu_hash {
+            // See https://github.com/m4b/goblin/blob/86de3b4b04c49e2f80ec9ebd8f60c059b7213fb7/src/elf/mod.rs#L481
+
+            let hash_offset = hash_offset as usize;
+
+            let buckets_num = u32::from_le_bytes(bytes[hash_offset..hash_offset + 4].try_into()?) as usize;
+            let min_chain = u32::from_le_bytes(bytes[hash_offset + 4..hash_offset + 8].try_into()?) as usize;
+            let bloom_size = u32::from_le_bytes(bytes[hash_offset + 8..hash_offset + 12].try_into()?) as usize;
+
+            if buckets_num == 0 || min_chain == 0 || bloom_size == 0 {
+                bail!("DT_GNU_HASH is invalid");
+            }
+
+            let buckets_offset = hash_offset + 16 + bloom_size * 8;
+            let mut max_chain = 0;
+            for bucket in 0..buckets_num {
+                let chain_off = buckets_offset + bucket * 4;
+                let chain = u32::from_le_bytes(bytes[chain_off..chain_off+4].try_into()?) as usize;
+                if max_chain < chain {
+                    max_chain = chain;
+                }
+            }
+            if max_chain < min_chain {
+                num_syms = 0 as usize;
+            }
+            else {
+                // Find the last chain within the bucket.
+                let mut chain_offset = buckets_offset + buckets_num * 4 + (max_chain - min_chain) * 4;
+                loop {
+                    let hash = u32::from_le_bytes(bytes[chain_offset..chain_offset + 4].try_into()?);
+                    max_chain += 1;
+                    chain_offset += 4;
+                    if (hash & 1) != 0 {
+                        num_syms = max_chain as usize;
+                        break;
+                    }
+                }
+            }
+        }
+        else {
+            bail!("no DT_HASH or DT_GNU_HASH");
+        }
+
         elf.dynsyms = Symtab::parse(bytes, dyn_info.symtab, num_syms, ctx)?;
 
         elf.dynstrtab = Strtab::parse(bytes, dyn_info.strtab, dyn_info.strsz, 0x0)?;
