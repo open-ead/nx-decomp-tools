@@ -26,7 +26,7 @@ def setup_python_venv():
     venv_python = venv_path / "bin" / "python"
     venv_pip = venv_path / "bin" / "pip"
 
-    if not venv_path.is_dir(follow_symlinks=True):
+    if not venv_path.is_dir():
         if venv_path.exists():
             fail(f"error: {USER_FRIENDLY_VENV_PATH} exists and is not a directory!")
         # create venv
