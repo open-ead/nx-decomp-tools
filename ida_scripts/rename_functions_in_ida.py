@@ -1,12 +1,15 @@
 # Renames functions in an IDA database to match the function names
 # in the decompiled source code.
 
+# this needs the toml module to be installed on the python interpreter
+# that IDA uses
+
 import csv
 import idc
 import os
-from util import config
+from .nx_decomp_tools.util.config import get_functions_csv_path
 
-csv_path = config.get_functions_csv_path()
+csv_path = get_functions_csv_path()
 
 def can_overwrite_name(addr: int, new_name: str):
     if not new_name or new_name.startswith(("sub_", "nullsub_", "j_")):

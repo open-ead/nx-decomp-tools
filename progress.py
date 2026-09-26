@@ -1,10 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
+
 import argparse
 from collections import defaultdict
 from colorama import Back, Fore, Style
-from util import utils
-from util.utils import FunctionStatus
 import typing as tp
+
+from nx_decomp_tools.util import FunctionStatus, format_symbol_name
+from nx_decomp_tools.util import csv as decomp_csv
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--csv", "-c", action="store_true",
@@ -24,7 +26,7 @@ num_total = 0
 code_size: tp.DefaultDict[FunctionStatus, int] = defaultdict(int)
 counts: tp.DefaultDict[FunctionStatus, int] = defaultdict(int)
 
-for info in utils.get_functions(version=args.version):
+for info in decomp_csv.get_functions(version=args.version):
     code_size_total += info.size
     num_total += 1
 
@@ -37,13 +39,13 @@ for info in utils.get_functions(version=args.version):
     if not args.csv:
         if info.status == FunctionStatus.NonMatching:
             if args.print_nm:
-                print(f"{Fore.RED}NM{Fore.RESET} {utils.format_symbol_name(info.decomp_name)}")
+                print(f"{Fore.RED}NM{Fore.RESET} {format_symbol_name(info.decomp_name)}")
         elif info.status == FunctionStatus.Equivalent:
             if args.print_eq:
-                print(f"{Fore.YELLOW}EQ{Fore.RESET} {utils.format_symbol_name(info.decomp_name)}")
+                print(f"{Fore.YELLOW}EQ{Fore.RESET} {format_symbol_name(info.decomp_name)}")
         elif info.status == FunctionStatus.Matching:
             if args.print_ok:
-                print(f"{Fore.GREEN}OK{Fore.RESET} {utils.format_symbol_name(info.decomp_name)}")
+                print(f"{Fore.GREEN}OK{Fore.RESET} {format_symbol_name(info.decomp_name)}")
 
 
 def format_progress(label: str, num: int, size: int):

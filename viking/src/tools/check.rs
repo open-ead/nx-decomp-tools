@@ -13,7 +13,6 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic;
 use std::sync::Mutex;
@@ -177,8 +176,6 @@ All further arguments are forwarded onto asm-differ.
 asm-differ arguments:"
 );
 
-    let differ_path = get_asm_differ_path()?;
-
     // By default, invoking asm-differ using std::process:Process doesn't seem to allow argparse
     // (the python module asm-differ uses to print its help text) to correctly determine the number of columns in the host terminal.
     // To work around this, we'll detect that for it, and set it manually via the COLUMNS environment variable
@@ -187,12 +184,11 @@ asm-differ arguments:"
         Err(_) => 240,
     };
 
-    let output = Command::new(&differ_path)
-        .current_dir(repo::get_tools_path()?)
+    let output = make_asm_differ_command()?
         .arg("--help")
         .env("COLUMNS", num_columns.to_string())
         .output()
-        .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
+        .context("failed to launch asm-differ")?;
 
     let asm_differ_help = String::from_utf8_lossy(&output.stdout);
 
@@ -608,11 +604,9 @@ fn show_asm_differ(
     differ_args: &[String],
     version: Option<&str>,
 ) -> Result<()> {
-    let differ_path = get_asm_differ_path()?;
-    let mut cmd = Command::new(&differ_path);
+    let mut cmd = make_asm_differ_command()?;
 
-    cmd.current_dir(repo::get_tools_path()?)
-        .arg("-I")
+    cmd.arg("-I")
         .arg("-e")
         .arg(name)
         .arg(format!("0x{:016x}", function.addr))
@@ -623,22 +617,18 @@ fn show_asm_differ(
         cmd.args(["--version", version]);
     }
 
-    cmd.status()
-        .with_context(|| format!("failed to launch asm-differ: {:?}", &differ_path))?;
+    cmd.status().context("failed to launch asm-differ")?;
 
     Ok(())
 }
 
-fn get_asm_differ_path() -> Result<PathBuf> {
-    let base_path = repo::get_tools_path()?;
-
-    // use the virtual env if one is setup with setup_python_venv()
-    let differ_path_venv = base_path.join(".venv/bin/asm-differ");
-    if differ_path_venv.exists() {
-        return Ok(differ_path_venv);
-    }
-
-    Ok(base_path.join("asm-differ/diff.py"))
+fn make_asm_differ_command() -> Result<Command> {
+    let mut command = Command::new("uv");
+    command
+        .args(["run", "asm-differ"])
+        // asm-differ requires diff_settings.py to be at cwd
+        .current_dir(repo::get_tools_path()?);
+    Ok(command)
 }
 
 fn rediff_function_after_differ(

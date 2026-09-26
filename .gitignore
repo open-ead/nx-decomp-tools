@@ -5,6 +5,8 @@ __pycache__/
 *.dist-info/
 .mypy_cache/
 .benchmarks/
+/.venv
+/dist
 
 # IDEs
 .idea/
@@ -24,6 +26,7 @@ __pycache__/
 *.gpr
 *.rep/
 *.lock
+!uv.lock
 
 # Debugging
 perf.data

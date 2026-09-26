@@ -1,67 +1,12 @@
 import platform
-from pathlib import Path
-import subprocess
-import sys
-import warnings
 import tarfile
 import tempfile
 import urllib.request
-from typing import NoReturn
 
-from common.util import config, tools
+from nx_decomp_tools.util import fail, config
 
-ROOT = Path(__file__).parent.parent.parent
-
-def get_target_path(version = config.get_default_version()):
-    return config.get_versioned_data_path(version) / "main.nso"
-
-def get_uncompressed_target_path(version = config.get_default_version()):
-    return config.get_versioned_data_path(version) / "main.uncompressed.nso"
-
-def get_target_elf_path(version = config.get_default_version()):
-    return config.get_versioned_data_path(version) / "main.elf"
-
-def fail(error: str) -> NoReturn:
-    print(">>> " + error)
-    sys.exit(1)
-
-def _convert_nso_to_elf(nso_path: Path, elf_out_path = get_target_elf_path(), uncompressed_nso_out_path = get_uncompressed_target_path()):
-    print(">>>> converting NSO to ELF...")
-    command = [tools.find_tool("nx2elf"), str(nso_path), "--export-elf", elf_out_path];
-    if uncompressed_nso_out_path is not None:
-        command.append("--export-uncompressed")
-        command.append(uncompressed_nso_out_path)
-    subprocess.check_call(command)
-
-
-def _decompress_nso(nso_path: Path, dest_path: Path):
-    warnings.warn("Using hactool to decompress the target NSO is deprecated, please use `_convert_nso_to_elf` instead", DeprecationWarning, stacklevel=2)
-    print(">>>> decompressing NSO...")
-    subprocess.check_call([tools.find_tool("hactool"), "-tnso",
-                           "--uncompressed=" + str(dest_path), str(nso_path)])
-
-def install_viking():
-    print(">>>> installing viking (tools/check)")
-    src_path = ROOT / "tools" / "common" / "viking"
-    install_path = ROOT / "tools"
-
-    try:
-        subprocess.check_call(["cargo", "build", "--manifest-path", src_path / "Cargo.toml", "--release"])
-        for tool in ["check", "listsym", "decompme"]:
-            (src_path / "target" / "release" / tool).rename(install_path / tool)
-    except FileNotFoundError:
-        print(sys.exc_info()[0])
-        fail("error: install cargo (rust) and try again")
-
-def _apply_xdelta3_patch(input: Path, patch: Path, dest: Path):
-    print(">>>> applying patch...")
-    try:
-        subprocess.check_call(["xdelta3", "-d", "-s", str(input), str(patch), str(dest)])
-    except FileNotFoundError:
-        fail("error: install xdelta3 and try again")
-
-def set_up_compiler(version):
-    compiler_dir = ROOT / "toolchain" / ("clang-"+version)
+def set_up_compiler(version: str):
+    compiler_dir = config.get_toolchain_root() / ("clang-"+version)
     if compiler_dir.is_dir():
         print(">>> clang is already set up: nothing to do")
         return
